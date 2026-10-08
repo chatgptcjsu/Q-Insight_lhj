@@ -147,6 +147,42 @@ td:nth-child(3) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .verdict { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 12px; background: #edf8f2; color: #39956e; font-size: 8px; }
 .verdict-fail { background: #fff0ed; color: #d46858; }
 .table-disclaimer { margin: 10px 18px 0; color: #a2aaba; font-size: 8px; }
+.boxplot-panel { margin-top: 16px; padding: 18px 18px 12px; overflow: hidden; }
+.boxplot-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.boxplot-header h2 { margin: 0; color: #26334a; font-size: 14px; font-weight: 700; }
+.boxplot-header p:not(.statistics-kicker) { margin: 5px 0 0; color: #8e99aa; font-size: 9px; }
+.boxplot-controls { display: flex; align-items: flex-end; gap: 8px; }
+.boxplot-controls label { display: grid; gap: 5px; color: #8994a7; font-size: 8px; }
+.boxplot-controls select { max-width: 240px; min-width: 165px; height: 33px; padding: 0 28px 0 9px; border: 1px solid #e3e8f0; border-radius: 7px; background: #fff; color: #59677e; font: inherit; font-size: 9px; }
+.boxplot-controls button { height: 33px; padding: 0 12px; border: 0; border-radius: 7px; background: #4f6fdf; color: #fff; cursor: pointer; font-size: 9px; font-weight: 600; }
+.boxplot-controls button:hover { background: #3f5fcf; }
+.boxplot-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 17px; margin: 17px 0 0; color: #7e8aa0; font-size: 8px; }
+.boxplot-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.boxplot-legend > strong { margin-left: auto; color: #7180a0; font-size: 9px; font-weight: 600; }
+.legend-box { width: 13px; height: 9px; border: 1px solid #7287e1; border-radius: 2px; background: #dce3ff; }
+.legend-median { width: 13px; height: 2px; background: #405cce; }
+.legend-whisker { position: relative; width: 2px; height: 12px; margin: 0 5px; background: #7f8ead; }
+.legend-whisker::before, .legend-whisker::after { position: absolute; left: -3px; width: 8px; height: 1px; background: #7f8ead; content: ''; }
+.legend-whisker::before { top: 1px; }
+.legend-whisker::after { bottom: 1px; }
+.legend-outlier { width: 6px; height: 6px; border-radius: 50%; background: #e58273; }
+.boxplot-chart-wrap { overflow-x: auto; padding: 5px 0 0; }
+.boxplot-chart { display: block; width: 100%; min-width: 590px; height: auto; overflow: visible; }
+.boxplot-grid line { stroke: #e9edf4; stroke-dasharray: 3 4; stroke-width: 1; }
+.boxplot-grid text { fill: #8f9bad; font-family: 'DM Sans','Noto Sans KR',sans-serif; font-size: 9px; }
+.boxplot-axis { stroke: #dce2eb; stroke-width: 1; }
+.boxplot-whisker, .boxplot-cap { stroke: #8291b1; stroke-width: 1.25; }
+.boxplot-box { fill: #dce4ff; stroke: #6f86df; stroke-width: 1.2; }
+.boxplot-median { stroke: #405dce; stroke-width: 2; }
+.boxplot-outlier { fill: #e47b6c; stroke: #fff; stroke-width: .7; }
+.boxplot-month:hover .boxplot-box { fill: #cbd6ff; stroke: #4d69d0; }
+.boxplot-labels text { font-family: 'DM Sans','Noto Sans KR',sans-serif; }
+.boxplot-month-label { fill: #748197; font-size: 8px; }
+.boxplot-count-label { fill: #a1aab8; font-size: 7px; }
+.boxplot-empty-mark { fill: #c0c7d2; font-family: 'Noto Sans KR',sans-serif; font-size: 10px; }
+.boxplot-footnote { padding-top: 10px; border-top: 1px solid #eff1f5; color: #9aa4b4; font-size: 8px; line-height: 1.6; }
+.boxplot-empty-state { display: grid; min-height: 180px; place-items: center; padding: 20px; color: #929daf; font-size: 10px; text-align: center; }
+@media (max-width: 760px) { .boxplot-panel { padding: 14px 12px 10px; } .boxplot-header { align-items: stretch; flex-direction: column; gap: 12px; } .boxplot-controls { width: 100%; } .boxplot-controls label { flex: 1; } .boxplot-controls select { min-width: 0; max-width: none; width: 100%; } .boxplot-controls button { flex: 0 0 auto; } .boxplot-legend { gap: 11px; } .boxplot-chart { min-width: 560px; } }
 .statistics-panel { margin-top: 16px; overflow: hidden; }
 .statistics-header { padding: 17px 18px 0; }
 .statistics-header .panel-heading { align-items: flex-start; }

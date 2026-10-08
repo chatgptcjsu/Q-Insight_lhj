@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { renderer } from './renderer'
 import statisticsJson from './statistics-data.json'
+import boxplotJson from './boxplot-data.json'
 
 type StatisticsSectionKey = 'weight' | 'burst' | 'tensile'
 type StatisticsRow = {
@@ -23,8 +24,35 @@ type StatisticsData = {
   months: string[]
   sections: Record<StatisticsSectionKey, StatisticsSection>
 }
+type BoxplotMonth = {
+  month: string
+  n: number
+  q1: number | null
+  median: number | null
+  q3: number | null
+  lowerWhisker: number | null
+  upperWhisker: number | null
+  outliers: number[]
+}
+type BoxplotEntry = {
+  title: string
+  product: string
+  months: BoxplotMonth[]
+}
+type BoxplotSection = {
+  title: string
+  unit: string
+  machines: Record<string, BoxplotEntry[]>
+}
+type BoxplotData = {
+  sourceSheet: string
+  quartileMethod: string
+  months: string[]
+  sections: Record<StatisticsSectionKey, BoxplotSection>
+}
 
 const statisticsData = statisticsJson as StatisticsData
+const boxplotData = boxplotJson as BoxplotData
 const statisticsTabs: Array<{ key: StatisticsSectionKey; label: string }> = [
   { key: 'weight', label: '평량' },
   { key: 'burst', label: '파열강도' },
@@ -178,7 +206,7 @@ app.get('/', (c) => {
         </section>
         <section class="insight-strip">
           <div class="insight-mark">i</div>
-          <div><strong>현재는 검사성적서의 초지 데이터 기준 화면입니다.</strong><p>CPK·상자수염그래프와 Felt 사용조건 연계는 데이터 기준을 확정한 뒤 단계적으로 연결합니다.</p></div>
+          <div><strong>초지 호기별 검사성적서 요약입니다.</strong><p>월별 통계와 상자그림은 업로드 파일 기준이며, 신규 파일 자동 반영 및 Felt 조건 연계는 다음 단계에서 연결합니다.</p></div>
         </section>
         <footer class="page-footer">품질 데이터 관리 시스템 <span>초기 화면 시안 · 엑셀 데이터 요약</span></footer>
       </main>
@@ -201,6 +229,47 @@ app.get('/machine/:id', (c) => {
   const machineStatistics = activeStatistics.rows[`초지${machine.id}`] ?? []
   const cpkCount = machineStatistics.filter((row) => row.statistic === 'Cpk' && (row.average !== null || row.months.some((value) => value !== null))).length
   const trackedItems = new Set(machineStatistics.filter((row) => row.statistic === '평균').map((row) => `${row.category}|${row.product}|${row.measure}`)).size
+  const boxplotSection = boxplotData.sections[sectionKey]
+  const availableBoxplots = (boxplotSection.machines[machine.id] ?? []).filter((entry) => entry.months.some((month) => month.n > 0))
+  const requestedBoxProduct = c.req.query('boxProduct')
+  const activeBoxplot = availableBoxplots.find((entry) => entry.product === requestedBoxProduct) ?? availableBoxplots[0]
+  const selectedBoxValues = activeBoxplot?.months.flatMap((month) => [month.lowerWhisker, month.upperWhisker, ...month.outliers]).filter((value): value is number => value !== null) ?? []
+  const rawBoxMin = selectedBoxValues.length ? Math.min(...selectedBoxValues) : 0
+  const rawBoxMax = selectedBoxValues.length ? Math.max(...selectedBoxValues) : 1
+  const boxPadding = rawBoxMax === rawBoxMin ? Math.max(Math.abs(rawBoxMax) * 0.08, 1) : (rawBoxMax - rawBoxMin) * 0.08
+  const boxScaleMin = rawBoxMin - boxPadding
+  const boxScaleMax = rawBoxMax + boxPadding
+  const boxSvgWidth = 760
+  const boxPlotTop = 22
+  const boxPlotBottom = 244
+  const boxPlotLeft = 57
+  const boxPlotRight = 740
+  const boxPlotHeight = boxPlotBottom - boxPlotTop
+  const boxPlotWidth = boxPlotRight - boxPlotLeft
+  const boxY = (value: number) => boxPlotBottom - ((value - boxScaleMin) / (boxScaleMax - boxScaleMin)) * boxPlotHeight
+  const boxTicks = Array.from({ length: 5 }, (_, index) => boxScaleMin + ((boxScaleMax - boxScaleMin) * index) / 4).reverse()
+  const boxSampleCount = activeBoxplot?.months.reduce((sum, month) => sum + month.n, 0) ?? 0
+  const boxChartMarks = activeBoxplot?.months.map((month, index) => {
+    const x = boxPlotLeft + ((index + 0.5) * boxPlotWidth) / 12
+    if (month.n === 0 || month.q1 === null || month.median === null || month.q3 === null || month.lowerWhisker === null || month.upperWhisker === null) {
+      return <text class="boxplot-empty-mark" x={x} y={boxPlotBottom + 19} text-anchor="middle">—</text>
+    }
+    const boxWidth = Math.min(24, boxPlotWidth / 12 * 0.42)
+    const boxTop = boxY(month.q3)
+    const boxBottom = boxY(month.q1)
+    return (
+      <g class="boxplot-month">
+        <title>{`${month.month} · n=${month.n} · Q1 ${month.q1} · 중앙값 ${month.median} · Q3 ${month.q3} · 이상치 ${month.outliers.length}건`}</title>
+        <line class="boxplot-whisker" x1={x} x2={x} y1={boxY(month.upperWhisker)} y2={boxTop} />
+        <line class="boxplot-whisker" x1={x} x2={x} y1={boxBottom} y2={boxY(month.lowerWhisker)} />
+        <line class="boxplot-cap" x1={x - boxWidth * 0.32} x2={x + boxWidth * 0.32} y1={boxY(month.upperWhisker)} y2={boxY(month.upperWhisker)} />
+        <line class="boxplot-cap" x1={x - boxWidth * 0.32} x2={x + boxWidth * 0.32} y1={boxY(month.lowerWhisker)} y2={boxY(month.lowerWhisker)} />
+        <rect class="boxplot-box" x={x - boxWidth / 2} y={boxTop} width={boxWidth} height={Math.max(1, boxBottom - boxTop)} rx="3" />
+        <line class="boxplot-median" x1={x - boxWidth / 2} x2={x + boxWidth / 2} y1={boxY(month.median)} y2={boxY(month.median)} />
+        {month.outliers.map((value) => <circle class="boxplot-outlier" cx={x} cy={boxY(value)} r="2.6"><title>{`${month.month} 이상치: ${value}`}</title></circle>)}
+      </g>
+    )
+  })
 
   return c.render(
     <div class="app-shell">
@@ -251,6 +320,44 @@ app.get('/machine/:id', (c) => {
             <div class="analysis-note"><span class="analysis-note-icon">↗</span><div><strong>통계 분석 화면은 다음 단계에서 연결됩니다.</strong><p>CPK는 품목·검사항목·규격 상하한을 분리해 계산하도록 설계합니다.</p></div></div>
           </section>
         </div>
+        <section class="panel boxplot-panel" aria-label={`${machine.name} ${boxplotSection.title} 상자그림`}>
+          <div class="boxplot-header">
+            <div>
+              <p class="statistics-kicker">BOX & WHISKER · 2026</p>
+              <h2>월별 {boxplotSection.title} 상자그림</h2>
+              <p>{activeBoxplot ? `${activeBoxplot.title} · ${boxSampleCount.toLocaleString('ko-KR')}개 검사값` : '선택한 호기에 표시할 원시 검사값이 없습니다.'}</p>
+            </div>
+            {availableBoxplots.length > 0 ? <form class="boxplot-controls" action={`/machine/${machine.id}`} method="get">
+              <input type="hidden" name="section" value={sectionKey} />
+              <label><span>품목</span><select name="boxProduct">
+                {availableBoxplots.map((entry) => <option value={entry.product} selected={entry.product === activeBoxplot?.product}>{entry.product}</option>)}
+              </select></label>
+              <button type="submit">그래프 보기</button>
+            </form> : null}
+          </div>
+          {activeBoxplot ? <>
+            <div class="boxplot-legend" aria-label="상자그림 범례">
+              <span><i class="legend-box"></i>25–75 백분위</span><span><i class="legend-median"></i>중앙값</span><span><i class="legend-whisker"></i>수염</span><span><i class="legend-outlier"></i>이상치</span>
+              <strong>{boxplotSection.unit}</strong>
+            </div>
+            <div class="boxplot-chart-wrap">
+              <svg class="boxplot-chart" viewBox={`0 0 ${boxSvgWidth} 286`} role="img" aria-label={`${machine.name} ${activeBoxplot.product} 월별 ${boxplotSection.title} 상자그림`}>
+                {boxTicks.map((tick) => {
+                  const y = boxY(tick)
+                  return <g class="boxplot-grid"><line x1={boxPlotLeft} x2={boxPlotRight} y1={y} y2={y} /><text x={boxPlotLeft - 10} y={y + 3} text-anchor="end">{formatStatistic(tick)}</text></g>
+                })}
+                <line class="boxplot-axis" x1={boxPlotLeft} x2={boxPlotRight} y1={boxPlotBottom} y2={boxPlotBottom} />
+                {boxChartMarks}
+                {boxplotData.months.map((month, index) => {
+                  const x = boxPlotLeft + ((index + 0.5) * boxPlotWidth) / 12
+                  const sampleCount = activeBoxplot.months[index]?.n ?? 0
+                  return <g class="boxplot-labels"><text class="boxplot-month-label" x={x} y={boxPlotBottom + 17} text-anchor="middle">{month}</text><text class="boxplot-count-label" x={x} y={boxPlotBottom + 31} text-anchor="middle">{sampleCount ? `n=${sampleCount}` : ''}</text></g>
+                })}
+              </svg>
+            </div>
+            <div class="boxplot-footnote">상자그림은 원본 차트의 exclusive 사분위수 기준을 반영했습니다. 막대에 마우스를 올리면 월별 Q1·중앙값·Q3·표본 수를 볼 수 있습니다.</div>
+          </> : <div class="boxplot-empty-state">현재 파일의 차트 연결 범위에서 이 호기·항목에 해당하는 유효 검사값을 찾지 못했습니다.</div>}
+        </section>
         <section class="panel statistics-panel" aria-label={`${machine.name} ${activeStatistics.title} 통계분석`}>
           <div class="statistics-header">
             <div class="panel-heading">
