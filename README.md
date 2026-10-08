@@ -1,21 +1,29 @@
-```txt
-npm install
-npm run dev
+# Q·INSIGHT 공정 품질 관리 화면 시안
+
+## 프로젝트 개요
+- **목표**: 초지 3·4·5호기의 검사성적서 데이터를 한 화면에서 확인하고, 호기별 품질 분석 시스템으로 확장합니다.
+- **현재 구현**: 전체 현황, 호기 선택, 호기별 검사 요약, 월별 검사 기록 막대그래프, 최근 검사 데이터 테이블
+- **기술 상태**: 현재는 Hono 기반으로 화면 시안을 띄우는 단계입니다. 앞서 설치한 Java 17·Maven·MariaDB를 이용한 Spring Boot 백엔드 및 DB 저장 기능은 아직 연결하지 않았습니다.
+
+## 화면 경로
+- `/` — 초지 3·4·5호기 선택 및 전체 요약
+- `/machine/3` — 초지 3호기 현황
+- `/machine/4` — 초지 4호기 현황
+- `/machine/5` — 초지 5호기 현황
+
+## 데이터 참고
+- 업로드된 `2026 화장지 검사성적서` 파일의 `QLT03_New(MES전용)` 시트를 읽어 화면용 요약값과 최근 기록 예시를 구성했습니다.
+- 현재 화면 데이터는 코드에 넣은 **시안용 정적 데이터**입니다. 엑셀 재업로드, MariaDB 저장, 자동 갱신은 구현되지 않았습니다.
+- 요약은 초지 3호기 739건, 초지 4호기 1,643건, 초지 5호기 2,158건이며, 엑셀 판정 불합격은 초지 4호기 2건으로 확인됐습니다.
+- CPK 계산과 상자수염그래프는 검사항목별 규격 상한·하한 및 데이터 그룹 기준을 정한 후 구현합니다.
+
+## 개발 실행
+```bash
+cd /home/user/webapp
+npm run build
 ```
 
-```txt
-npm run deploy
-```
-
-[For generating/synchronizing types based on your Worker configuration run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
-
-```txt
-npm run cf-typegen
-```
-
-Pass the `CloudflareBindings` as generics when instantiation `Hono`:
-
-```ts
-// src/index.ts
-const app = new Hono<{ Bindings: CloudflareBindings }>()
-```
+## 배포 및 다음 단계
+- 이 화면은 기존 Hono/Cloudflare Pages 미리보기 템플릿에서 실행됩니다.
+- Java/Spring Boot와 MariaDB를 실제로 연결하는 운영 시스템은 별도 백엔드 구성 및 사내 서버 배포가 필요합니다. Cloudflare Pages/Workers는 Spring Boot 애플리케이션을 직접 실행하지 않습니다.
+- 추천 다음 단계: 업로드 엑셀 데이터 구조 확정 → Spring Boot API 및 MariaDB 스키마 설계 → 엑셀 업로드/중복 방지/갱신 이력 → 실제 데이터 연결 → CPK·추이 분석 구현
