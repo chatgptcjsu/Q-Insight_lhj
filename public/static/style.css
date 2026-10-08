@@ -147,6 +147,43 @@ td:nth-child(3) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .verdict { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 12px; background: #edf8f2; color: #39956e; font-size: 8px; }
 .verdict-fail { background: #fff0ed; color: #d46858; }
 .table-disclaimer { margin: 10px 18px 0; color: #a2aaba; font-size: 8px; }
+.statistics-panel { margin-top: 16px; overflow: hidden; }
+.statistics-header { padding: 17px 18px 0; }
+.statistics-header .panel-heading { align-items: flex-start; }
+.statistics-header .panel-heading h2 { color: #26334a; font-size: 14px; }
+.statistics-header .panel-heading h2 span { color: #8994a7; font-size: 11px; font-weight: 500; }
+.statistics-kicker { margin: 0 0 6px; color: #7186d9; font-size: 8px; font-weight: 700; letter-spacing: .14em; }
+.statistics-source { padding: 6px 8px; border: 1px solid #e7ebf2; border-radius: 5px; color: #8591a5; font-size: 8px; white-space: nowrap; }
+.statistics-tabs { display: flex; gap: 5px; margin-top: 17px; border-bottom: 1px solid #e9edf4; }
+.statistics-tab { position: relative; padding: 9px 13px 10px; color: #8792a4; font-size: 10px; font-weight: 500; }
+.statistics-tab:hover { color: #4969dc; }
+.statistics-tab.active { color: #4565dc; font-weight: 700; }
+.statistics-tab.active::after { position: absolute; right: 10px; bottom: -1px; left: 10px; height: 2px; border-radius: 2px 2px 0 0; background: #5674e3; content: ''; }
+.statistics-overview { display: flex; align-items: center; gap: 26px; padding: 13px 18px; border-bottom: 1px solid #edf0f5; background: #fafbfe; }
+.statistics-overview > div:not(.overview-caption) { min-width: 60px; }
+.statistics-overview > div > span:first-child { display: block; color: #9aa4b4; font-size: 8px; }
+.statistics-overview strong { display: block; margin-top: 3px; color: #394862; font-size: 13px; }
+.statistics-overview strong small { margin-left: 3px; color: #909bad; font-size: 8px; font-weight: 500; }
+.statistics-overview .overview-caption { display: flex; align-items: center; gap: 7px; margin-left: auto; color: #8b96a9; font-size: 8px; }
+.overview-caption .summary-icon { width: 16px; height: 16px; font-size: 8px; }
+.statistics-table-wrap { overflow: auto; max-height: 480px; }
+.statistics-table { width: max-content; min-width: 100%; text-align: right; }
+.statistics-table th { position: sticky; top: 0; z-index: 1; padding: 9px 11px; border-bottom: 1px solid #e9edf4; background: #f8f9fc; color: #7c899f; text-align: right; font-size: 8px; }
+.statistics-table th:first-child, .statistics-table th:nth-child(2) { text-align: left; }
+.statistics-table td { min-width: 59px; padding: 8px 11px; border-top: 1px solid #f1f3f7; color: #66738a; text-align: right; font-size: 8px; }
+.statistics-table td:first-child, .statistics-table td:nth-child(2) { min-width: 105px; max-width: 190px; text-align: left; }
+.statistics-table td:nth-child(3) { overflow: visible; max-width: none; }
+.statistics-table .category-cell { color: #52617a; font-weight: 600; }
+.statistics-table .product-cell { color: #758198; }
+.statistics-table .numeric-cell { font-variant-numeric: tabular-nums; }
+.statistics-table .cpk-row { background: #f8f9ff; }
+.statistics-table .cpk-row td { color: #5c6fb3; font-weight: 600; }
+.statistics-table .sigma-row td { color: #8b96a8; }
+.stat-type { display: inline-flex; min-width: 32px; justify-content: center; padding: 3px 6px; border-radius: 4px; background: #eef2f8; color: #758198; font-size: 8px; }
+.stat-type.cpk-type { background: #eaf0ff; color: #536bd1; }
+.stat-type.sigma-type { background: #f1f2f5; color: #8993a4; }
+.statistics-footnote { display: flex; justify-content: space-between; gap: 15px; padding: 10px 18px; border-top: 1px solid #edf0f5; color: #9aa4b4; font-size: 8px; }
+@media (max-width: 760px) { .statistics-header { padding: 14px 12px 0; } .statistics-source { font-size: 7px; } .statistics-overview { flex-wrap: wrap; gap: 12px 19px; padding: 10px 12px; } .statistics-overview .overview-caption { flex-basis: 100%; margin-left: 0; } .statistics-table th, .statistics-table td { padding-right: 9px; padding-left: 9px; } .statistics-footnote { flex-direction: column; gap: 5px; padding: 9px 12px; } }
 @media (min-width: 1450px) { .main-content { padding-right: 58px; padding-left: 58px; } .machine-card { padding-right: 20px; padding-left: 20px; } }
 @media (max-width: 1100px) { .sidebar { width: 205px; } .main-content { margin-left: 205px; padding-right: 25px; padding-left: 25px; } .machine-grid { gap: 10px; } .machine-card { padding-right: 13px; padding-left: 13px; } .machine-state { font-size: 8px; } .detail-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } .detail-columns { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .sidebar { position: static; width: auto; height: auto; padding: 12px 14px 10px; border-right: 0; border-bottom: 1px solid #e9edf4; } .brand { padding: 0 3px 12px; } .brand-mark { width: 34px; height: 34px; } .nav-caption, .sidebar-footer { display: none; } .machine-nav { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; } .nav-link { min-height: 36px; flex: 0 0 auto; gap: 7px; padding: 0 9px; border: 1px solid #eef0f5; font-size: 10px; } .nav-icon { width: 21px; height: 21px; flex-basis: 21px; font-size: 9px; } .nav-alert { min-width: 16px; height: 16px; font-size: 8px; } .main-content { margin: 0; padding: 0 16px 24px; } .topbar { min-height: 49px; } .source-chip { padding: 6px 8px; font-size: 8px; } .page-heading { align-items: flex-start; flex-direction: column; gap: 12px; padding: 24px 0 18px; } .page-heading h1 { font-size: 22px; } .page-description { font-size: 10px; } .date-range { font-size: 9px; } .summary-grid { grid-template-columns: 1fr; gap: 8px; } .summary-card { min-height: 108px; padding: 14px 15px; } .summary-value { margin-top: 8px; font-size: 23px; } .summary-note { margin-top: 9px; } .machine-section { margin-top: 24px; } .section-heading h2 { font-size: 13px; } .section-heading p { max-width: 250px; line-height: 1.6; } .machine-grid { grid-template-columns: 1fr; gap: 9px; } .machine-card { padding: 14px 15px 0; } .machine-card h3 { margin-top: 10px; } .machine-metrics { margin-top: 14px; padding: 11px 0; } .insight-strip { margin-top: 13px; } .detail-heading { gap: 10px; } .detail-heading h1 { gap: 7px; } .heading-suffix { font-size: 12px; } .detail-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } .detail-summary .summary-card { min-height: 105px; padding: 12px; } .detail-summary .summary-value { font-size: 20px; } .detail-summary .date-value { font-size: 16px; } .detail-summary .summary-label { font-size: 9px; } .detail-summary .summary-note { font-size: 8px; } .detail-columns { gap: 9px; margin-top: 10px; } .trend-panel, .checklist-panel { padding: 14px 12px 11px; } .chart-area { margin-right: 1px; } .bar-chart { gap: 4px; } .chart-bar { max-width: 19px; } .records-panel { margin-top: 10px; } th, td { padding-right: 10px; padding-left: 10px; } .page-footer { font-size: 8px; } }

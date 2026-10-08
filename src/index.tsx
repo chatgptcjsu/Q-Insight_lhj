@@ -1,5 +1,40 @@
 import { Hono } from 'hono'
 import { renderer } from './renderer'
+import statisticsJson from './statistics-data.json'
+
+type StatisticsSectionKey = 'weight' | 'burst' | 'tensile'
+type StatisticsRow = {
+  category: string
+  product: string
+  measure: string
+  statistic: string
+  spec: number | string | null
+  average: number | string | null
+  months: Array<number | string | null>
+}
+type StatisticsSection = {
+  title: string
+  unit: string
+  averageLabel: string
+  rows: Record<string, StatisticsRow[]>
+}
+type StatisticsData = {
+  sourceSheet: string
+  months: string[]
+  sections: Record<StatisticsSectionKey, StatisticsSection>
+}
+
+const statisticsData = statisticsJson as StatisticsData
+const statisticsTabs: Array<{ key: StatisticsSectionKey; label: string }> = [
+  { key: 'weight', label: '평량' },
+  { key: 'burst', label: '파열강도' },
+  { key: 'tensile', label: '인장강도' },
+]
+const formatStatistic = (value: number | string | null) => {
+  if (value === null || value === '') return '—'
+  if (typeof value === 'number') return value.toLocaleString('ko-KR', { maximumFractionDigits: 3 })
+  return value
+}
 
 const app = new Hono()
 app.use(renderer)
@@ -158,6 +193,14 @@ app.get('/machine/:id', (c) => {
   const monthLabels = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월']
   const maxMonthly = Math.max(...machine.monthly)
   const passRate = ((machine.records - machine.failures) / machine.records * 100).toFixed(1)
+  const requestedSection = c.req.query('section') as StatisticsSectionKey | undefined
+  const sectionKey: StatisticsSectionKey = requestedSection && statisticsTabs.some((tab) => tab.key === requestedSection)
+    ? requestedSection
+    : 'weight'
+  const activeStatistics = statisticsData.sections[sectionKey]
+  const machineStatistics = activeStatistics.rows[`초지${machine.id}`] ?? []
+  const cpkCount = machineStatistics.filter((row) => row.statistic === 'Cpk' && (row.average !== null || row.months.some((value) => value !== null))).length
+  const trackedItems = new Set(machineStatistics.filter((row) => row.statistic === '평균').map((row) => `${row.category}|${row.product}|${row.measure}`)).size
 
   return c.render(
     <div class="app-shell">
@@ -208,6 +251,51 @@ app.get('/machine/:id', (c) => {
             <div class="analysis-note"><span class="analysis-note-icon">↗</span><div><strong>통계 분석 화면은 다음 단계에서 연결됩니다.</strong><p>CPK는 품목·검사항목·규격 상하한을 분리해 계산하도록 설계합니다.</p></div></div>
           </section>
         </div>
+        <section class="panel statistics-panel" aria-label={`${machine.name} ${activeStatistics.title} 통계분석`}>
+          <div class="statistics-header">
+            <div class="panel-heading">
+              <div><p class="statistics-kicker">WORKBOOK STATISTICS</p><h2>통계분석 정리 <span>(초지)</span></h2><p>{activeStatistics.title}의 품목별 기준과 월별 통계</p></div>
+              <span class="statistics-source">엑셀 시트 연동 시안</span>
+            </div>
+            <nav class="statistics-tabs" aria-label="통계 항목 선택">
+              {statisticsTabs.map((tab) => (
+                <a class={`statistics-tab ${sectionKey === tab.key ? 'active' : ''}`} href={`/machine/${machine.id}?section=${tab.key}`}>{tab.label}</a>
+              ))}
+            </nav>
+          </div>
+          <div class="statistics-overview">
+            <div><span>통계표 행</span><strong>{machineStatistics.length}<small>행</small></strong></div>
+            <div><span>품목·유형</span><strong>{trackedItems}<small>개</small></strong></div>
+            <div><span>표에 포함된 CPK</span><strong>{cpkCount}<small>항목</small></strong></div>
+            <div class="overview-caption"><span class="summary-icon blue">i</span><span>값은 업로드된 엑셀 시트에 저장된 표시값입니다.</span></div>
+          </div>
+          <div class="statistics-table-wrap">
+            <table class="statistics-table">
+              <thead><tr>
+                <th>지종 / 분류</th><th>품명 / 용도</th>{sectionKey === 'tensile' ? <th>방향</th> : null}
+                <th>기준 ({activeStatistics.unit})</th><th>통계</th><th>{activeStatistics.averageLabel}</th>
+                {statisticsData.months.map((month) => <th>{month}</th>)}
+              </tr></thead>
+              <tbody>
+                {machineStatistics.map((row) => (
+                  <tr class={`statistics-row ${row.statistic === 'Cpk' ? 'cpk-row' : ''} ${row.statistic === 'σ' ? 'sigma-row' : ''}`}>
+                    <td class="category-cell">{row.category || '—'}</td>
+                    <td class="product-cell">{row.product || '—'}</td>
+                    {sectionKey === 'tensile' ? <td>{row.measure || '—'}</td> : null}
+                    <td>{formatStatistic(row.spec)}</td>
+                    <td><span class={`stat-type ${row.statistic === 'Cpk' ? 'cpk-type' : row.statistic === 'σ' ? 'sigma-type' : ''}`}>{row.statistic}</span></td>
+                    <td class="numeric-cell">{formatStatistic(row.average)}</td>
+                    {row.months.map((value) => <td class="numeric-cell">{formatStatistic(value)}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div class="statistics-footnote">
+            <span>σ는 엑셀 표기 그대로 표시합니다. CPK가 비어 있는 칸은 원본 시트에 계산값이 없는 경우입니다.</span>
+            <span>월별 열은 가로로 스크롤할 수 있습니다.</span>
+          </div>
+        </section>
         <section class="panel records-panel">
           <div class="panel-heading records-heading"><div><h2>최근 검사 기록</h2><p>업로드된 검사성적서에서 가져온 샘플 기록</p></div><span class="data-badge">엑셀 데이터</span></div>
           <div class="table-scroll"><table>
