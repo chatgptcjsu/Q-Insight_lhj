@@ -37,6 +37,8 @@ type BoxplotMonth = {
 type BoxplotEntry = {
   title: string
   product: string
+  sourceNames: string[]
+  totalCount: number
   months: BoxplotMonth[]
 }
 type BoxplotSection = {
@@ -328,7 +330,7 @@ app.get('/machine/:id', (c) => {
             <div>
               <p class="statistics-kicker">BOX & WHISKER · 2026</p>
               <h2>월별 {boxplotSection.title} 상자그림</h2>
-              <p>{activeBoxplot ? `${activeBoxplot.title} · ${boxSampleCount.toLocaleString('ko-KR')}개 검사값` : '선택한 호기에 표시할 원시 검사값이 없습니다.'}</p>
+              <p>{activeBoxplot ? `${activeBoxplot.title} · ${boxSampleCount.toLocaleString('ko-KR')}개 검사값${activeBoxplot.sourceNames.length > 1 ? ` · 원본 품명 ${activeBoxplot.sourceNames.length}개 통합` : ''}` : '선택한 호기에 표시할 원시 검사값이 없습니다.'}</p>
             </div>
             {availableBoxplots.length > 0 ? <form class="boxplot-controls" action={`/machine/${machine.id}`} method="get">
               <input type="hidden" name="section" value={sectionKey} />
@@ -358,7 +360,7 @@ app.get('/machine/:id', (c) => {
                 })}
               </svg>
             </div>
-            <div class="boxplot-footnote">상자그림은 원본 차트의 exclusive 사분위수 기준을 반영했습니다. 막대에 마우스를 올리면 월별 Q1·중앙값·Q3·표본 수를 볼 수 있습니다.</div>
+            <div class="boxplot-footnote">`초지345`에서 측정값이 있는 모든 품목을 표시합니다. 원본 Excel 차트의 exclusive 사분위수 기준을 적용하고, 월별 표본 수가 4개 미만이면 보간 방식으로 계산합니다. 상자에 마우스를 올리면 Q1·중앙값·Q3·표본 수를 볼 수 있습니다.</div>
           </> : <div class="boxplot-empty-state">현재 파일의 차트 연결 범위에서 이 호기·항목에 해당하는 유효 검사값을 찾지 못했습니다.</div>}
         </section>
         <section class="panel statistics-panel" aria-label={`${machine.name} ${activeStatistics.title} 통계분석`}>
