@@ -113,10 +113,11 @@
     updateTargetCount()
   }
 
-  function updateTargetCount() {
+  function updateTargetCount(event) {
     const selected = ui.targetList.querySelectorAll('input:checked')
     if (selected.length > 6) {
-      const latest = selected[selected.length - 1]
+      const interacted = event?.target?.matches?.('input[type="checkbox"]') && event.target.checked ? event.target : null
+      const latest = interacted || selected[selected.length - 1]
       latest.checked = false
       ui.status.textContent = '비교 대상은 최대 6개까지 선택할 수 있습니다.'
     }
