@@ -1,4 +1,5 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { renderer } from './renderer'
 import statisticsJson from './statistics-data.json'
 import boxplotJson from './boxplot-data.json'
@@ -66,8 +67,155 @@ const formatStatistic = (value: number | string | null) => {
   return value
 }
 
-const app = new Hono()
+type D1Statement = {
+  bind(...values: unknown[]): D1Statement
+  first<T = Record<string, unknown>>(): Promise<T | null>
+  run(): Promise<unknown>
+}
+type AppBindings = { DB: { prepare(query: string): D1Statement } }
+type AdminRecord = { pin_hash: string; must_change: number; recovery_hash: string | null }
+type AdminSession = { must_change: number }
+type AppContext = Context<{ Bindings: AppBindings }>
+
+const app = new Hono<{ Bindings: AppBindings }>()
 app.use(renderer)
+
+const ADMIN_SESSION_COOKIE = 'qinsight_admin_session'
+const ADMIN_SESSION_TTL_MS = 20 * 60 * 1000
+const PIN_LOCK_MS = 5 * 60 * 1000
+const hashSecret = async (value: string) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`qinsight-admin-v1:${value}`))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+const generateToken = (bytes = 32) => {
+  const value = crypto.getRandomValues(new Uint8Array(bytes))
+  return [...value].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+const makeRecoveryCode = () => {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(20))
+  return [...bytes].map((byte) => alphabet[byte % alphabet.length]).join('').match(/.{1,5}/g)!.join('-')
+}
+const normalizeRecoveryCode = (value: unknown) => String(value ?? '').replace(/[\s-]/g, '').toUpperCase()
+const getAdminRecord = (db: AppBindings['DB']) => db.prepare('SELECT pin_hash, must_change, recovery_hash FROM admin_auth WHERE id = 1').first<AdminRecord>()
+const getAdminSession = async (c: AppContext) => {
+  const token = getCookie(c, ADMIN_SESSION_COOKIE)
+  if (!token) return null
+  const sessionHash = await hashSecret(token)
+  const session = await c.env.DB.prepare('SELECT expires_at FROM admin_sessions WHERE session_hash = ?').bind(sessionHash).first<{ expires_at: number }>()
+  if (!session || session.expires_at <= Date.now()) {
+    if (session) await c.env.DB.prepare('DELETE FROM admin_sessions WHERE session_hash = ?').bind(sessionHash).run()
+    return null
+  }
+  const admin = await getAdminRecord(c.env.DB)
+  return admin ? { admin, sessionHash } : null
+}
+const startAdminSession = async (c: AppContext) => {
+  const token = generateToken()
+  const sessionHash = await hashSecret(token)
+  const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS
+  await c.env.DB.prepare('INSERT INTO admin_sessions (session_hash, expires_at) VALUES (?, ?)').bind(sessionHash, expiresAt).run()
+  setCookie(c, ADMIN_SESSION_COOKIE, token, { path: '/', httpOnly: true, sameSite: 'Lax', secure: new URL(c.req.url).protocol === 'https:', maxAge: ADMIN_SESSION_TTL_MS / 1000 })
+}
+const requestKey = async (c: AppContext) => {
+  const address = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0].trim() || 'local-preview'
+  return hashSecret(address)
+}
+const checkLocked = async (c: AppContext) => {
+  const key = await requestKey(c)
+  const row = await c.env.DB.prepare('SELECT locked_until FROM admin_attempts WHERE client_key = ?').bind(key).first<{ locked_until: number }>()
+  return row?.locked_until && row.locked_until > Date.now() ? row.locked_until : 0
+}
+const recordFailedAttempt = async (c: AppContext) => {
+  const key = await requestKey(c)
+  const current = await c.env.DB.prepare('SELECT attempts FROM admin_attempts WHERE client_key = ?').bind(key).first<{ attempts: number }>()
+  const attempts = (current?.attempts || 0) + 1
+  const lockedUntil = attempts >= 5 ? Date.now() + PIN_LOCK_MS : 0
+  await c.env.DB.prepare('INSERT INTO admin_attempts (client_key, attempts, locked_until) VALUES (?, ?, ?) ON CONFLICT(client_key) DO UPDATE SET attempts = excluded.attempts, locked_until = excluded.locked_until').bind(key, lockedUntil ? 0 : attempts, lockedUntil).run()
+  return lockedUntil
+}
+const clearFailedAttempts = async (c: AppContext) => {
+  const key = await requestKey(c)
+  await c.env.DB.prepare('DELETE FROM admin_attempts WHERE client_key = ?').bind(key).run()
+}
+const pinIsValid = (pin: unknown) => typeof pin === 'string' && /^[0-9]{4,12}$/.test(pin)
+
+app.get('/api/admin/status', async (c) => {
+  const admin = await getAdminRecord(c.env.DB)
+  const session = await getAdminSession(c)
+  return c.json({ authenticated: Boolean(session && !session.admin.must_change), mustChange: Boolean(session?.admin.must_change), initialSetup: !admin })
+})
+
+app.post('/api/admin/login', async (c) => {
+  const lockedUntil = await checkLocked(c)
+  if (lockedUntil) return c.json({ error: '잠시 잠겼습니다. 5분 후 다시 시도해 주세요.' }, 429)
+  const body = await c.req.json<{ pin?: string }>().catch(() => ({} as { pin?: string }))
+  const candidate = body.pin || ''
+  let admin = await getAdminRecord(c.env.DB)
+  if (!admin && candidate === '0000') {
+    await c.env.DB.prepare('INSERT OR IGNORE INTO admin_auth (id, pin_hash, must_change) VALUES (1, ?, 1)').bind(await hashSecret('0000')).run()
+    admin = await getAdminRecord(c.env.DB)
+  }
+  if (!admin || await hashSecret(candidate) !== admin.pin_hash) {
+    const nextLock = await recordFailedAttempt(c)
+    return c.json({ error: nextLock ? 'PIN 입력 오류가 5회 발생해 5분간 잠겼습니다.' : 'PIN이 올바르지 않습니다.' }, nextLock ? 429 : 401)
+  }
+  await clearFailedAttempts(c)
+  await startAdminSession(c)
+  return c.json({ authenticated: true, mustChange: Boolean(admin.must_change) })
+})
+
+app.post('/api/admin/change-pin', async (c) => {
+  const session = await getAdminSession(c)
+  if (!session) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const body = await c.req.json<{ currentPin?: string; newPin?: string }>().catch(() => ({} as { currentPin?: string; newPin?: string }))
+  if (!pinIsValid(body.newPin) || body.newPin === '0000') return c.json({ error: '새 PIN은 0000이 아닌 숫자 4~12자리로 설정해 주세요.' }, 400)
+  if (await hashSecret(body.currentPin || '') !== session.admin.pin_hash) return c.json({ error: '현재 PIN이 올바르지 않습니다.' }, 401)
+  const recoveryCode = session.admin.recovery_hash ? null : makeRecoveryCode()
+  const newPin = body.newPin as string
+  await c.env.DB.prepare('UPDATE admin_auth SET pin_hash = ?, must_change = 0, recovery_hash = COALESCE(recovery_hash, ?) WHERE id = 1')
+    .bind(await hashSecret(newPin), recoveryCode ? await hashSecret(recoveryCode.replaceAll('-', '')) : null).run()
+  await c.env.DB.prepare('DELETE FROM admin_sessions WHERE session_hash <> ?').bind(session.sessionHash).run()
+  return c.json({ success: true, recoveryCode })
+})
+
+app.post('/api/admin/recover', async (c) => {
+  const lockedUntil = await checkLocked(c)
+  if (lockedUntil) return c.json({ error: '잠시 잠겼습니다. 5분 후 다시 시도해 주세요.' }, 429)
+  const body = await c.req.json<{ recoveryCode?: string; newPin?: string }>().catch(() => ({} as { recoveryCode?: string; newPin?: string }))
+  if (!pinIsValid(body.newPin) || body.newPin === '0000') return c.json({ error: '새 PIN은 0000이 아닌 숫자 4~12자리로 설정해 주세요.' }, 400)
+  const admin = await getAdminRecord(c.env.DB)
+  const recovery = normalizeRecoveryCode(body.recoveryCode)
+  if (!admin?.recovery_hash || await hashSecret(recovery) !== admin.recovery_hash) {
+    const nextLock = await recordFailedAttempt(c)
+    return c.json({ error: nextLock ? '복구 코드 입력 오류가 5회 발생해 5분간 잠겼습니다.' : '복구 코드가 올바르지 않습니다.' }, nextLock ? 429 : 401)
+  }
+  const recoveryCode = makeRecoveryCode()
+  const newPin = body.newPin as string
+  await c.env.DB.prepare('UPDATE admin_auth SET pin_hash = ?, must_change = 0, recovery_hash = ? WHERE id = 1')
+    .bind(await hashSecret(newPin), await hashSecret(recoveryCode.replaceAll('-', ''))).run()
+  await c.env.DB.prepare('DELETE FROM admin_sessions').run()
+  await clearFailedAttempts(c)
+  await startAdminSession(c)
+  return c.json({ success: true, recoveryCode })
+})
+
+app.post('/api/admin/rotate-recovery', async (c) => {
+  const session = await getAdminSession(c)
+  if (!session || session.admin.must_change) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const body = await c.req.json<{ currentPin?: string }>().catch(() => ({} as { currentPin?: string }))
+  if (await hashSecret(body.currentPin || '') !== session.admin.pin_hash) return c.json({ error: '현재 PIN이 올바르지 않습니다.' }, 401)
+  const recoveryCode = makeRecoveryCode()
+  await c.env.DB.prepare('UPDATE admin_auth SET recovery_hash = ? WHERE id = 1').bind(await hashSecret(recoveryCode.replaceAll('-', ''))).run()
+  return c.json({ success: true, recoveryCode })
+})
+
+app.post('/api/admin/logout', async (c) => {
+  const session = await getAdminSession(c)
+  if (session) await c.env.DB.prepare('DELETE FROM admin_sessions WHERE session_hash = ?').bind(session.sessionHash).run()
+  deleteCookie(c, ADMIN_SESSION_COOKIE, { path: '/' })
+  return c.json({ success: true })
+})
 
 const machines = [
   {
@@ -140,6 +288,7 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare') =>
           {machine.failures > 0 ? <span class="nav-alert">{machine.failures}</span> : null}
         </a>
       ))}
+      <button type="button" class="admin-entry-button" data-admin-entry aria-label="관리자 메뉴 열기">관리자</button>
     </nav>
     <div class="sidebar-footer">
       <span class="status-dot"></span>
@@ -485,11 +634,13 @@ app.get('/inspection', (c) => {
   )
 })
 
-app.get('/products', (c) => {
+app.get('/products', async (c) => {
+  const session = await getAdminSession(c)
+  if (!session || session.admin.must_change) return c.redirect('/?admin=1')
   return c.render(
     <div class="app-shell">
       {navigation(undefined)}
-      <main class="main-content data-admin-content">
+        <main class="main-content data-admin-content">
         <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>품명 관리</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 품목 사전</div></header>
         <section class="page-heading"><div><p class="eyebrow">PRODUCT MASTER</p><h1>표준 품명·별칭 관리</h1><p class="page-description">표기가 다른 같은 제품은 표준 품명으로 연결하고, 신제품은 여기서 등록합니다.</p></div></section>
         <section class="alias-info-strip"><span class="alias-info-icon">i</span><p>원본 품명 표시와 분석용 표준 품명을 각각 수정할 수 있습니다. 변경 표시는 필터·비교에 반영되며, 실제 엑셀 원본 행은 보존됩니다. 품명은 이름이 비슷하다는 이유만으로 자동 병합하지 않습니다.</p></section>
@@ -508,10 +659,14 @@ app.get('/products', (c) => {
             <div id="product-manager-status" class="product-manager-status" role="status"></div>
           </div>
         </details>
+        <details class="panel admin-security-details">
+          <summary class="product-admin-summary"><span><strong>비밀번호 및 복구 설정</strong><small>관리자 PIN 변경과 복구 코드 관리</small></span><span class="admin-summary-action">보안 설정 열기</span></summary>
+          <div class="admin-security-actions"><button type="button" class="quiet-button" data-admin-change-pin>비밀번호 변경</button><button type="button" class="quiet-button" data-admin-rotate-recovery>복구 코드 재발급</button><button type="button" class="quiet-button" data-admin-logout>로그아웃</button><p>복구 코드는 비밀번호를 잊었을 때 사용할 수 있습니다. 재발급하면 이전 코드는 폐기됩니다.</p></div>
+        </details>
         <section class="panel product-list-panel">
           <div class="inspection-panel-heading product-list-heading"><div><h2>등록된 표준 품명</h2><p>엑셀 원본에서 발견한 품명과 직접 등록한 표준 품명·별칭을 표시합니다.</p></div><label class="product-search"><span>검색</span><input id="product-search" type="search" placeholder="품명 검색" /></label></div>
           <div class="product-list-wrap"><table class="product-list-table"><thead><tr><th>호기</th><th>분석용 표준 품명</th><th>원본 품명 표시</th><th>관리</th></tr></thead><tbody id="product-list-body"><tr><td colSpan={4} class="inspection-loading">품명 사전을 불러오는 중입니다.</td></tr></tbody></table></div>
-          <p class="table-disclaimer">품명 설정은 관리자 페이지(/products)에서만 표시되며 일반 메뉴에는 노출되지 않습니다. 원본 품명 수정은 브라우저별 표시 설정으로 저장됩니다. 실제 엑셀 원본은 보존되며, 다른 사용자와 공유하거나 권한을 제한하려면 서버 저장소와 관리자 로그인이 필요합니다.</p>
+          <p class="table-disclaimer">품명 관리는 관리자 PIN 확인 후 이용할 수 있습니다. PIN과 복구 코드 검증은 D1에 저장되지만, 품명 변경값은 현재 브라우저 localStorage에 저장됩니다. 실제 엑셀 원본은 보존됩니다.</p>
         </section>
         <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/compare">상자그림 비교로 이동</a></span></footer>
       </main>
