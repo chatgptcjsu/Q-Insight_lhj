@@ -97,7 +97,8 @@
     }
     ui.body.innerHTML = visibleGroups.map((group) => {
       const aliases = settings.aliases.filter((entry) => entry.machine === group.machine && entry.canonical === group.canonical)
-      const originalNames = group.sourceNames.length ? group.sourceNames : ['원본 데이터 없음']
+      const namesForDisplay = [...new Set([...group.sourceNames, ...aliases.map((entry) => entry.alias)])]
+      const originalNames = namesForDisplay.length ? namesForDisplay : ['원본 데이터 없음']
       const aliasMarkup = originalNames.map((name) => {
         const aliasEntry = aliases.find((entry) => entry.alias === name)
         return `<span class="product-name-chip ${aliasEntry ? 'mapped-chip' : ''}">${escapeHtml(name)}${aliasEntry ? '<small>별칭</small>' : ''}</span>`
