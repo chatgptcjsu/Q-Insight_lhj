@@ -51,6 +51,7 @@
   let dataset = null
   let targets = []
   let aliasMap = new Map()
+  let sourceRenames = []
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
@@ -60,14 +61,20 @@
     let saved = { aliases: [] }
     try { saved = JSON.parse(localStorage.getItem(ALIAS_KEY) || '{}') } catch { saved = { aliases: [] } }
     const disabledDefaults = Array.isArray(saved.disabledDefaults) ? saved.disabledDefaults : []
+    sourceRenames = Array.isArray(saved.sourceRenames) ? saved.sourceRenames : []
     const defaultEntries = DEFAULT_ALIASES.filter((entry) => !disabledDefaults.includes(JSON.stringify([entry.machine, entry.alias])))
     const entries = [...defaultEntries, ...(Array.isArray(saved.aliases) ? saved.aliases : [])]
     aliasMap = new Map()
     entries.forEach((entry) => aliasMap.set(`${entry.machine}\u0000${entry.alias}`, entry.canonical))
   }
 
+  function displayedSourceName(machine, sourceName) {
+    return sourceRenames.find((entry) => entry.machine === machine && entry.sourceName === sourceName)?.displayName || sourceName
+  }
+
   function canonicalName(machine, sourceName) {
-    return aliasMap.get(`${machine}\u0000${sourceName}`) || sourceName
+    const displayedName = displayedSourceName(machine, sourceName)
+    return aliasMap.get(`${machine}\u0000${displayedName}`) || displayedName
   }
 
   function fillSelect(select, entries, placeholder) {
@@ -79,9 +86,10 @@
     dataset.rows.forEach((row) => {
       if (row.auxiliaryOnly) return
       const machine = row.values[1]
-      const sourceName = row.values[10]
-      if (!machine || !sourceName || !['초지3', '초지4', '초지5'].includes(machine)) return
-      const canonical = canonicalName(machine, sourceName)
+      const rawSourceName = row.values[10]
+      if (!machine || !rawSourceName || !['초지3', '초지4', '초지5'].includes(machine)) return
+      const sourceName = displayedSourceName(machine, rawSourceName)
+      const canonical = canonicalName(machine, rawSourceName)
       const key = JSON.stringify([machine, canonical])
       if (!map.has(key)) map.set(key, { key, machine, canonical, sourceNames: new Set(), count: 0, measureCounts: {} })
       const target = map.get(key)
@@ -187,7 +195,7 @@
     const values = []
     dataset.rows.forEach((row) => {
       const rowValues = row.values
-      if (row.auxiliaryOnly || rowValues[1] !== target.machine || !aliasSet.has(rowValues[10])) return
+      if (row.auxiliaryOnly || rowValues[1] !== target.machine || !aliasSet.has(displayedSourceName(rowValues[1], rowValues[10]))) return
       const rawValue = rowValues[measure.column]
       if (typeof rawValue !== 'number' || !Number.isFinite(rawValue) || rawValue <= 0) return
       const dateText = rowValues[2]

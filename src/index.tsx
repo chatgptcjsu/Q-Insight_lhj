@@ -117,7 +117,7 @@ const machines = [
   },
 ]
 
-const navigation = (activeId?: string, activePage?: 'inspection' | 'products' | 'compare') => (
+const navigation = (activeId?: string, activePage?: 'inspection' | 'compare') => (
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="품질관리 홈">
       <span class="brand-mark">Q</span>
@@ -130,9 +130,6 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'products' | 
       </a>
       <a class={`nav-link ${activePage === 'inspection' ? 'active' : ''}`} href="/inspection">
         <span class="nav-icon overview-icon">▤</span><span>초지345 원본</span>
-      </a>
-      <a class={`nav-link ${activePage === 'products' ? 'active' : ''}`} href="/products">
-        <span class="nav-icon overview-icon">≋</span><span>품명 관리</span>
       </a>
       <a class={`nav-link ${activePage === 'compare' ? 'active' : ''}`} href="/compare">
         <span class="nav-icon overview-icon">▱</span><span>상자그림 비교</span>
@@ -491,26 +488,30 @@ app.get('/inspection', (c) => {
 app.get('/products', (c) => {
   return c.render(
     <div class="app-shell">
-      {navigation(undefined, 'products')}
+      {navigation(undefined)}
       <main class="main-content data-admin-content">
         <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>품명 관리</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 품목 사전</div></header>
         <section class="page-heading"><div><p class="eyebrow">PRODUCT MASTER</p><h1>표준 품명·별칭 관리</h1><p class="page-description">표기가 다른 같은 제품은 표준 품명으로 연결하고, 신제품은 여기서 등록합니다.</p></div></section>
-        <section class="alias-info-strip"><span class="alias-info-icon">i</span><p>원본 품명은 그대로 보존됩니다. 별칭은 통계와 비교에서만 표준 품명으로 묶이며, 이름이 비슷하다고 자동 병합하지 않습니다.</p></section>
-        <section class="panel product-form-panel">
-          <div class="inspection-panel-heading"><div><h2 id="product-form-title">표준 품명 또는 별칭 추가</h2><p>별칭을 비워 두면 새 표준 품목이 등록됩니다.</p></div><button type="button" id="cancel-product-edit" class="quiet-button" hidden>편집 취소</button></div>
-          <form id="product-form" class="product-form">
-            <input type="hidden" id="product-edit-key" />
-            <label><span>호기</span><select id="product-machine" required><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5">초지5</option></select></label>
-            <label class="product-name-field"><span>표준 품명</span><input id="product-canonical" type="text" maxLength={100} placeholder="예: 깨/나 (일반) 2P" required /></label>
-            <label class="product-name-field"><span>추가할 원본 별칭 (선택)</span><input id="product-alias" type="text" maxLength={100} placeholder="예: 깨/나 (일반) 2P (초3)" /></label>
-            <button type="submit" id="save-product-entry" class="primary-button">품명 등록</button>
-          </form>
-          <div id="product-manager-status" class="product-manager-status" role="status"></div>
-        </section>
+        <section class="alias-info-strip"><span class="alias-info-icon">i</span><p>원본 품명 표시와 분석용 표준 품명을 각각 수정할 수 있습니다. 변경 표시는 필터·비교에 반영되며, 실제 엑셀 원본 행은 보존됩니다. 품명은 이름이 비슷하다는 이유만으로 자동 병합하지 않습니다.</p></section>
+        <details class="panel product-form-panel product-admin-details">
+          <summary class="product-admin-summary"><span><strong>관리자 품명 설정</strong><small>표준 품명·별칭과 원본 품명 표시를 수정합니다.</small></span><span class="admin-summary-action">설정 열기</span></summary>
+          <div class="product-admin-content">
+            <div class="inspection-panel-heading"><div><h2 id="product-form-title">품명 설정</h2><p>표준 품명, 별칭 및 원본 품명 표시를 등록하거나 수정합니다.</p></div><button type="button" id="cancel-product-edit" class="quiet-button" hidden>편집 취소</button></div>
+            <form id="product-form" class="product-form">
+              <input type="hidden" id="product-edit-key" />
+              <label><span>호기</span><select id="product-machine" required><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5">초지5</option></select></label>
+              <label class="product-name-field"><span id="product-canonical-label">표준 품명</span><input id="product-canonical" type="text" maxLength={100} placeholder="예: 깨/나 (일반) 2P" required /></label>
+              <label id="product-alias-field" class="product-name-field"><span id="product-alias-label">추가할 원본 별칭 (선택)</span><input id="product-alias" type="text" maxLength={100} placeholder="예: 깨/나 (일반) 2P (초3)" /></label>
+              <label id="source-name-fixed-field" class="product-name-field" hidden><span>원본 품명 표시 (수정 가능)</span><input id="source-name-fixed" type="text" maxLength={100} required /></label>
+              <button type="submit" id="save-product-entry" class="primary-button">품명 등록</button>
+            </form>
+            <div id="product-manager-status" class="product-manager-status" role="status"></div>
+          </div>
+        </details>
         <section class="panel product-list-panel">
-          <div class="inspection-panel-heading product-list-heading"><div><h2>등록된 표준 품명</h2><p>엑셀에서 발견한 품명과 직접 등록한 표준 품명·별칭을 함께 표시합니다.</p></div><label class="product-search"><span>검색</span><input id="product-search" type="search" placeholder="품명 검색" /></label></div>
-          <div class="product-list-wrap"><table class="product-list-table"><thead><tr><th>호기</th><th>표준 품명</th><th>연결된 원본 표기</th><th>관리</th></tr></thead><tbody id="product-list-body"><tr><td colspan={4} class="inspection-loading">품명 사전을 불러오는 중입니다.</td></tr></tbody></table></div>
-          <p class="table-disclaimer">미리보기에서는 품명 설정을 이 브라우저에만 저장합니다. 실제 시스템에서는 MariaDB에 저장해 모든 사용자와 공유합니다.</p>
+          <div class="inspection-panel-heading product-list-heading"><div><h2>등록된 표준 품명</h2><p>엑셀 원본에서 발견한 품명과 직접 등록한 표준 품명·별칭을 표시합니다.</p></div><label class="product-search"><span>검색</span><input id="product-search" type="search" placeholder="품명 검색" /></label></div>
+          <div class="product-list-wrap"><table class="product-list-table"><thead><tr><th>호기</th><th>분석용 표준 품명</th><th>원본 품명 표시</th><th>관리</th></tr></thead><tbody id="product-list-body"><tr><td colSpan={4} class="inspection-loading">품명 사전을 불러오는 중입니다.</td></tr></tbody></table></div>
+          <p class="table-disclaimer">품명 설정은 관리자 페이지(/products)에서만 표시되며 일반 메뉴에는 노출되지 않습니다. 원본 품명 수정은 브라우저별 표시 설정으로 저장됩니다. 실제 엑셀 원본은 보존되며, 다른 사용자와 공유하거나 권한을 제한하려면 서버 저장소와 관리자 로그인이 필요합니다.</p>
         </section>
         <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/compare">상자그림 비교로 이동</a></span></footer>
       </main>
@@ -544,7 +545,7 @@ app.get('/compare', (c) => {
           <div class="boxplot-legend compare-legend"><span><i class="legend-box"></i>25–75 백분위</span><span><i class="legend-median"></i>중앙값</span><span><i class="legend-whisker"></i>수염</span><span><i class="legend-outlier"></i>이상치</span></div>
           <p class="table-disclaimer">표본 수가 적은 품목은 상자그림 해석에 주의하세요. 품명 별칭은 표준 품명으로 묶어 비교합니다.</p>
         </section>
-        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/products">품명 별칭 관리</a></span></footer>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/inspection">초지345 원본 데이터</a></span></footer>
       </main>
       <script src="/static/compare.js" defer></script>
     </div>

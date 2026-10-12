@@ -1,6 +1,7 @@
 (() => {
   const DATA_URL = '/static/inspection-data.json'
   const ACK_KEY = 'q-insight-inspection-alerts-reviewed-v1'
+  const PRODUCT_SETTINGS_KEY = 'q-insight-product-aliases-v1'
   const QUALITY_COLUMNS = [7, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 38, 39, 40, 41]
   const MIN_GROUP_SIZE = 12
   const elements = {
@@ -36,6 +37,7 @@
     anomalies: [],
     anomalyByCell: new Map(),
     reviewed: loadReviewed(),
+    sourceRenames: loadSourceRenames(),
     filteredRows: [],
     page: 1,
   }
@@ -57,6 +59,19 @@
     }
   }
 
+  function loadSourceRenames() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PRODUCT_SETTINGS_KEY) || '{}')
+      return Array.isArray(saved.sourceRenames) ? saved.sourceRenames : []
+    } catch {
+      return []
+    }
+  }
+
+  function displayedSourceName(machine, sourceName) {
+    return state.sourceRenames.find((entry) => entry.machine === machine && entry.sourceName === sourceName)?.displayName || sourceName
+  }
+
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -70,6 +85,7 @@
   }
 
   function rowField(row, index) {
+    if (index === 10) return displayedSourceName(row.values[1], row.values[index])
     return row.values[index]
   }
 
@@ -231,7 +247,8 @@
       elements.tableBody.innerHTML = pageRows.map((row) => {
         const cellAlerts = alertsByRow.get(row.id) || new Map()
         const auxiliaryClass = row.auxiliaryOnly ? 'auxiliary-row' : ''
-        const cells = row.values.map((value, index) => {
+        const cells = row.values.map((rawValue, index) => {
+          const value = index === 10 ? rowField(row, index) : rawValue
           const alert = cellAlerts.get(index)
           const classNames = ['source-cell', `source-column-${index}`]
           if (alert) classNames.push('suspicious-cell')
@@ -311,7 +328,7 @@
       if (!response.ok) throw new Error(`초지345 데이터를 불러오지 못했습니다. (${response.status})`)
       state.dataset = await response.json()
       appendOptions(elements.machine, state.dataset.rows.map((row) => row.values[1]), '전체 호기')
-      appendOptions(elements.product, state.dataset.rows.filter((row) => !row.auxiliaryOnly).map((row) => row.values[10]), '전체 품명')
+      appendOptions(elements.product, state.dataset.rows.filter((row) => !row.auxiliaryOnly).map((row) => rowField(row, 10)), '전체 품명')
       appendOptions(elements.verdict, state.dataset.rows.filter((row) => !row.auxiliaryOnly).map((row) => row.values[36]), '전체 판정')
       appendOptions(elements.month, state.dataset.rows.map((row) => row.values[0]), '전체 월', (left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10))
       renderTableHeader()
