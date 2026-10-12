@@ -377,7 +377,6 @@ app.get('/machine/:id', (c) => {
 
   const monthLabels = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월']
   const maxMonthly = Math.max(...machine.monthly)
-  const passRate = ((machine.records - machine.failures) / machine.records * 100).toFixed(1)
   const requestedSection = c.req.query('section') as StatisticsSectionKey | undefined
   const sectionKey: StatisticsSectionKey = requestedSection && statisticsTabs.some((tab) => tab.key === requestedSection)
     ? requestedSection
@@ -444,15 +443,11 @@ app.get('/machine/:id', (c) => {
           </div>
           <a class="back-link" href="/">← 전체 현황</a>
         </section>
-        <section class={`summary-grid detail-summary ${machine.id === '3' ? 'machine-three-summary' : ''}`} aria-label={`${machine.name} 품질 요약`}>
+        <section class="summary-grid detail-summary" aria-label={`${machine.name} 품질 요약`}>
           <article class="summary-card"><div class="summary-label">검사 기록</div><div class="summary-value">{machine.records.toLocaleString('ko-KR')}<span>건</span></div><div class="summary-note"><span class="summary-icon blue">▤</span>업로드된 엑셀 기준</div></article>
-          {machine.id !== '3' ? <>
-            <article class="summary-card"><div class="summary-label">엑셀 판정 불합격</div><div class="summary-value">{machine.failures}<span>건</span></div><div class="summary-note"><span class={`summary-icon ${machine.failures ? 'coral' : 'green'}`}>{machine.failures ? '!' : '✓'}</span>{machine.failures ? '확인 필요' : '현재 등록된 불합격 없음'}</div></article>
-            <article class="summary-card"><div class="summary-label">판정 합격률</div><div class="summary-value">{passRate}<span>%</span></div><div class="summary-note"><span class="summary-icon green">↗</span>판정 기록 기준 · 참고 지표</div></article>
-          </> : null}
           <article class="summary-card"><div class="summary-label">최근 검사일</div><div class="summary-value date-value">{machine.latest}</div><div class="summary-note"><span class="summary-icon blue">◷</span>{machine.latestProduct}</div></article>
         </section>
-        <div class={`detail-columns ${machine.id === '3' ? 'machine-three-columns' : ''}`}>
+        <div class="detail-columns">
           <section class="panel trend-panel">
             <div class="panel-heading"><div><h2>월별 검사 기록</h2><p>월별 검사 샘플 건수</p></div><span class="panel-unit">건</span></div>
             <div class="chart-area" role="img" aria-label="월별 검사 기록 막대그래프">
@@ -471,13 +466,7 @@ app.get('/machine/:id', (c) => {
             </div>
             <div class="chart-footnote"><span class="legend-dot"></span>검사 데이터가 있는 월 기준 · 2026년 10월 7일까지</div>
           </section>
-          {machine.id !== '3' ? <section class="panel checklist-panel">
-            <div class="panel-heading"><div><h2>검사 항목</h2><p>검사성적서에 포함된 대표 항목</p></div><span class="list-icon">≡</span></div>
-            <div class="inspection-tags">
-              <span>평량</span><span>백색도</span><span>파열강도</span><span>인장강도 MD/CD</span><span>흡수도</span><span>신장율</span><span>두께</span><span>핀홀·반점</span>
-            </div>
-            <div class="analysis-note"><span class="analysis-note-icon">↗</span><div><strong>통계 분석 화면은 다음 단계에서 연결됩니다.</strong><p>CPK는 품목·검사항목·규격 상하한을 분리해 계산하도록 설계합니다.</p></div></div>
-          </section> : null}
+
         </div>
         <section class="panel boxplot-panel" aria-label={`${machine.name} ${boxplotSection.title} 상자그림`}>
           <div class="boxplot-header">

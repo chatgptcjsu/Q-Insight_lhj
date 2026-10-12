@@ -103,13 +103,11 @@ h1, h2, h3, p { margin-top: 0; }
 .heading-suffix { color: #8490a3; font-size: 15px; font-weight: 500; letter-spacing: -.02em; }
 .back-link { padding: 8px 11px; border: 1px solid #e4e9f1; border-radius: 7px; background: #fff; color: #6b7890; font-size: 10px; white-space: nowrap; }
 .back-link:hover { border-color: #cbd5fa; color: #4969dc; }
-.detail-summary { grid-template-columns: repeat(4,minmax(0,1fr)); }
-.detail-summary.machine-three-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.detail-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .detail-summary .summary-card { min-height: 126px; }
-.machine-three-columns { grid-template-columns: minmax(0,1fr); }
 .detail-summary .summary-value { font-size: 24px; }
 .detail-summary .date-value { font-size: 19px; letter-spacing: -.035em; }
-.detail-columns { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(260px,.8fr); gap: 14px; margin-top: 17px; }
+.detail-columns { display: grid; grid-template-columns: minmax(0,1fr); gap: 14px; margin-top: 17px; }
 .panel { min-width: 0; border: 1px solid #e8ecf3; border-radius: 11px; background: #fff; box-shadow: 0 2px 8px #2a416006; }
 .trend-panel, .checklist-panel { padding: 17px 18px 14px; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
