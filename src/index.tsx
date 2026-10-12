@@ -117,7 +117,7 @@ const machines = [
   },
 ]
 
-const navigation = (activeId?: string, inspectionActive = false) => (
+const navigation = (activeId?: string, activePage?: 'inspection' | 'products' | 'compare') => (
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="품질관리 홈">
       <span class="brand-mark">Q</span>
@@ -125,11 +125,17 @@ const navigation = (activeId?: string, inspectionActive = false) => (
     </a>
     <div class="nav-caption">품질 현황</div>
     <nav class="machine-nav" aria-label="초지기별 메뉴">
-      <a class={`nav-link ${activeId ? '' : !inspectionActive ? 'active' : ''}`} href="/">
+      <a class={`nav-link ${activeId || activePage ? '' : 'active'}`} href="/">
         <span class="nav-icon overview-icon">▦</span><span>전체 현황</span>
       </a>
-      <a class={`nav-link ${inspectionActive ? 'active' : ''}`} href="/inspection">
+      <a class={`nav-link ${activePage === 'inspection' ? 'active' : ''}`} href="/inspection">
         <span class="nav-icon overview-icon">▤</span><span>초지345 원본</span>
+      </a>
+      <a class={`nav-link ${activePage === 'products' ? 'active' : ''}`} href="/products">
+        <span class="nav-icon overview-icon">≋</span><span>품명 관리</span>
+      </a>
+      <a class={`nav-link ${activePage === 'compare' ? 'active' : ''}`} href="/compare">
+        <span class="nav-icon overview-icon">▱</span><span>상자그림 비교</span>
       </a>
       {machines.map((machine) => (
         <a class={`nav-link ${activeId === machine.id ? 'active' : ''}`} href={`/machine/${machine.id}`}>
@@ -427,7 +433,7 @@ app.get('/machine/:id', (c) => {
 app.get('/inspection', (c) => {
   return c.render(
     <div class="app-shell">
-      {navigation(undefined, true)}
+      {navigation(undefined, 'inspection')}
       <main class="main-content inspection-content">
         <header class="topbar">
           <div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>초지345 원본 데이터</strong></div>
@@ -478,6 +484,69 @@ app.get('/inspection', (c) => {
         <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/">전체 현황으로 돌아가기</a></span></footer>
       </main>
       <script src="/static/inspection.js" defer></script>
+    </div>
+  )
+})
+
+app.get('/products', (c) => {
+  return c.render(
+    <div class="app-shell">
+      {navigation(undefined, 'products')}
+      <main class="main-content data-admin-content">
+        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>품명 관리</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 품목 사전</div></header>
+        <section class="page-heading"><div><p class="eyebrow">PRODUCT MASTER</p><h1>표준 품명·별칭 관리</h1><p class="page-description">표기가 다른 같은 제품은 표준 품명으로 연결하고, 신제품은 여기서 등록합니다.</p></div></section>
+        <section class="alias-info-strip"><span class="alias-info-icon">i</span><p>원본 품명은 그대로 보존됩니다. 별칭은 통계와 비교에서만 표준 품명으로 묶이며, 이름이 비슷하다고 자동 병합하지 않습니다.</p></section>
+        <section class="panel product-form-panel">
+          <div class="inspection-panel-heading"><div><h2 id="product-form-title">표준 품명 또는 별칭 추가</h2><p>별칭을 비워 두면 새 표준 품목이 등록됩니다.</p></div><button type="button" id="cancel-product-edit" class="quiet-button" hidden>편집 취소</button></div>
+          <form id="product-form" class="product-form">
+            <input type="hidden" id="product-edit-key" />
+            <label><span>호기</span><select id="product-machine" required><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5">초지5</option></select></label>
+            <label class="product-name-field"><span>표준 품명</span><input id="product-canonical" type="text" maxLength={100} placeholder="예: 깨/나 (일반) 2P" required /></label>
+            <label class="product-name-field"><span>추가할 원본 별칭 (선택)</span><input id="product-alias" type="text" maxLength={100} placeholder="예: 깨/나 (일반) 2P (초3)" /></label>
+            <button type="submit" id="save-product-entry" class="primary-button">품명 등록</button>
+          </form>
+          <div id="product-manager-status" class="product-manager-status" role="status"></div>
+        </section>
+        <section class="panel product-list-panel">
+          <div class="inspection-panel-heading product-list-heading"><div><h2>등록된 표준 품명</h2><p>엑셀에서 발견한 품명과 직접 등록한 표준 품명·별칭을 함께 표시합니다.</p></div><label class="product-search"><span>검색</span><input id="product-search" type="search" placeholder="품명 검색" /></label></div>
+          <div class="product-list-wrap"><table class="product-list-table"><thead><tr><th>호기</th><th>표준 품명</th><th>연결된 원본 표기</th><th>관리</th></tr></thead><tbody id="product-list-body"><tr><td colspan={4} class="inspection-loading">품명 사전을 불러오는 중입니다.</td></tr></tbody></table></div>
+          <p class="table-disclaimer">미리보기에서는 품명 설정을 이 브라우저에만 저장합니다. 실제 시스템에서는 MariaDB에 저장해 모든 사용자와 공유합니다.</p>
+        </section>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/compare">상자그림 비교로 이동</a></span></footer>
+      </main>
+      <script src="/static/products.js" defer></script>
+    </div>
+  )
+})
+
+app.get('/compare', (c) => {
+  return c.render(
+    <div class="app-shell">
+      {navigation(undefined, 'compare')}
+      <main class="main-content data-admin-content">
+        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>상자그림 비교</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 검사 데이터</div></header>
+        <section class="page-heading"><div><p class="eyebrow">COMPARE DISTRIBUTIONS</p><h1>상자그림 비교</h1><p class="page-description">검사 항목·기간·호기와 품명을 골라 여러 분포를 나란히 비교합니다.</p></div></section>
+        <section class="panel compare-control-panel">
+          <div class="compare-filter-grid">
+            <label><span>검사항목</span><select id="compare-measure"></select></label>
+            <label><span>비교 기간</span><select id="compare-period"><option value="all">전체 기간</option><option value="month">월 선택</option><option value="custom">기간 직접 선택</option></select></label>
+            <label id="compare-month-wrap"><span>월 선택</span><select id="compare-month"><option value="">전체 월</option></select></label>
+            <label id="compare-start-wrap" hidden><span>시작일</span><input id="compare-start-date" type="date" /></label>
+            <label id="compare-end-wrap" hidden><span>종료일</span><input id="compare-end-date" type="date" /></label>
+          </div>
+          <div class="compare-target-heading"><div><h2>비교 대상</h2><p>최소 2개, 최대 6개를 선택하세요. 호기가 달라도 비교할 수 있습니다.</p></div><span id="compare-target-count" class="data-badge">0개 선택</span></div>
+          <div id="compare-target-list" class="compare-target-list"><div class="inspection-loading">품목 목록을 불러오는 중입니다.</div></div>
+          <div class="compare-actions"><p id="compare-status" role="status">조건을 선택하면 그래프를 표시합니다.</p><button type="button" id="run-comparison" class="primary-button">상자그림 비교</button></div>
+        </section>
+        <section class="panel compare-chart-panel">
+          <div class="inspection-panel-heading"><div><h2 id="compare-chart-title">비교 결과</h2><p id="compare-chart-subtitle">선택한 데이터의 중앙값과 사분위 범위를 함께 표시합니다.</p></div><span id="compare-sample-total" class="data-badge">—</span></div>
+          <div id="compare-chart" class="compare-chart-area"><div class="compare-empty-state">검사항목·기간·비교 대상을 선택한 뒤 ‘상자그림 비교’를 누르세요.</div></div>
+          <div class="boxplot-legend compare-legend"><span><i class="legend-box"></i>25–75 백분위</span><span><i class="legend-median"></i>중앙값</span><span><i class="legend-whisker"></i>수염</span><span><i class="legend-outlier"></i>이상치</span></div>
+          <p class="table-disclaimer">표본 수가 적은 품목은 상자그림 해석에 주의하세요. 품명 별칭은 표준 품명으로 묶어 비교합니다.</p>
+        </section>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/products">품명 별칭 관리</a></span></footer>
+      </main>
+      <script src="/static/compare.js" defer></script>
     </div>
   )
 })
