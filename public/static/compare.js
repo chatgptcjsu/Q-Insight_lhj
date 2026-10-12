@@ -1,5 +1,12 @@
 (() => {
   const DATA_URL = '/static/inspection-data.json'
+  window.qInsightLoadInspectionDataset = window.qInsightLoadInspectionDataset || (() => {
+    window.qInsightInspectionDatasetPromise = window.qInsightInspectionDatasetPromise || fetch(DATA_URL).then((response) => {
+      if (!response.ok) throw new Error('초지345 데이터를 불러오지 못했습니다.')
+      return response.json()
+    })
+    return window.qInsightInspectionDatasetPromise
+  })
   const ALIAS_KEY = 'q-insight-product-aliases-v1'
   const DEFAULT_ALIASES = [
     { machine: '초지3', alias: '깨/나 (일반) 2P (초3)', canonical: '깨/나 (일반) 2P' },
@@ -275,9 +282,7 @@
 
   async function start() {
     try {
-      const response = await fetch(DATA_URL)
-      if (!response.ok) throw new Error('초지345 데이터를 불러오지 못했습니다.')
-      dataset = await response.json()
+      dataset = await window.qInsightLoadInspectionDataset()
       readAliases()
       prepareTargets()
       fillSelect(ui.measure, MEASURES.map((item) => ({ value: item.key, label: `${item.label} (${item.unit})` })), '검사항목 선택')

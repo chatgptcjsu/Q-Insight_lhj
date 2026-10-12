@@ -280,7 +280,7 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare') =>
         <span class="nav-icon overview-icon">▤</span><span>초지345 원본</span>
       </a>
       <a class={`nav-link ${activePage === 'compare' ? 'active' : ''}`} href="/compare">
-        <span class="nav-icon overview-icon">▱</span><span>상자그림 비교</span>
+        <span class="nav-icon overview-icon">↗</span><span>품질·FELT 추이</span>
       </a>
       {machines.map((machine) => (
         <a class={`nav-link ${activeId === machine.id ? 'active' : ''}`} href={`/machine/${machine.id}`}>
@@ -671,9 +671,49 @@ app.get('/compare', (c) => {
     <div class="app-shell">
       {navigation(undefined, 'compare')}
       <main class="main-content data-admin-content">
-        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>상자그림 비교</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 검사 데이터</div></header>
-        <section class="page-heading"><div><p class="eyebrow">COMPARE DISTRIBUTIONS</p><h1>상자그림 비교</h1><p class="page-description">검사 항목·기간·호기와 품명을 골라 여러 분포를 나란히 비교합니다.</p></div></section>
-        <section class="panel compare-control-panel">
+          <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>품질·FELT 추이</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 검사 데이터 · 초지5 FELT 운영 기록</div></header>
+        <section class="page-heading"><div><p class="eyebrow">QUALITY & FELT TRENDS</p><h1>품질·FELT 추이 비교</h1><p class="page-description">품목별 월 추이와 FELT 교체 주기별 일별 운전조건을 같은 화면에서 살펴봅니다.</p></div></section>
+        <nav class="compare-view-tabs" aria-label="비교 보기 선택">
+          <button type="button" class="compare-view-tab active" data-compare-view="combined">품질·FELT 함께 보기</button>
+          <button type="button" class="compare-view-tab" data-compare-view="quality">품목 품질 추이</button>
+          <button type="button" class="compare-view-tab" data-compare-view="felt">FELT 일별 운전조건</button>
+          <button type="button" class="compare-view-tab" data-compare-view="distribution">분포 비교</button>
+        </nav>
+        <section id="quality-trend-panel" class="panel compare-control-panel compare-view-panel">
+          <div class="compare-filter-grid trend-filter-grid">
+            <label><span>검사항목</span><select id="trend-measure"></select></label>
+            <label><span>시작 월</span><select id="trend-start-month"></select></label>
+            <label><span>종료 월</span><select id="trend-end-month"></select></label>
+            <label><span>월 집계</span><select id="trend-statistic"><option value="average">월평균</option><option value="median">월중앙값</option></select></label>
+            <label class="trend-search-filter"><span>품목 검색</span><input id="trend-product-search" type="search" placeholder="품명 검색" /></label>
+          </div>
+          <div class="compare-target-heading"><div><h2>비교 품목</h2><p>같은 검사항목·단위의 품목을 2~6개 선택하세요.</p></div><span id="trend-target-count" class="data-badge">0개 선택</span></div>
+          <div id="trend-target-list" class="compare-target-list"><div class="inspection-loading">품목 목록을 불러오는 중입니다.</div></div>
+          <div class="compare-actions"><p id="trend-status" role="status">월별 평균값과 표본 수를 비교합니다.</p><button type="button" id="run-trend-comparison" class="primary-button">월별 추이 보기</button></div>
+          <div class="compare-trend-chart-panel">
+            <div class="inspection-panel-heading"><div><h2 id="trend-chart-title">월별 품질 추이</h2><p id="trend-chart-subtitle">품목을 선택하고 비교를 실행하세요.</p></div><span id="trend-sample-total" class="data-badge">—</span></div>
+            <div id="trend-chart" class="compare-chart-area"><div class="compare-empty-state">검사항목과 품목을 선택한 뒤 ‘월별 추이 보기’를 누르세요.</div></div>
+            <div id="trend-legend" class="trend-legend"></div>
+          </div>
+        </section>
+        <section id="felt-trend-panel" class="panel compare-control-panel compare-view-panel">
+          <div class="felt-source-notice"><strong>데이터 안내</strong><span>‘1-2’ 시트는 기록 연도 수정 전까지 제외했습니다. 측정값이 없는 예약 날짜는 차트에 표시하지 않습니다.</span></div>
+          <div class="compare-filter-grid trend-filter-grid felt-filter-grid">
+            <label><span>FELT 주기</span><select id="felt-cycle-select"></select></label>
+            <label><span>운전조건</span><select id="felt-metric-select"></select></label>
+            <label><span>시작일</span><input id="felt-start-date" type="date" /></label>
+            <label><span>종료일</span><input id="felt-end-date" type="date" /></label>
+            <label class="felt-sync-option"><input id="felt-sync-quality-period" type="checkbox" checked /><span>품질 월 기간에 맞춤</span></label>
+          </div>
+          <div class="compare-actions"><p id="felt-trend-status" role="status">일별 측정값과 FELT 교체일을 함께 표시합니다.</p><button type="button" id="run-felt-trend" class="primary-button">일별 추이 보기</button></div>
+          <div class="compare-trend-chart-panel">
+            <div class="inspection-panel-heading"><div><h2 id="felt-chart-title">FELT 일별 운전조건</h2><p id="felt-chart-subtitle">운전조건을 선택하고 추이를 확인하세요.</p></div><span id="felt-record-count" class="data-badge">—</span></div>
+            <div id="felt-chart" class="compare-chart-area"><div class="compare-empty-state">조건을 선택한 뒤 ‘일별 추이 보기’를 누르세요.</div></div>
+            <div id="felt-event-list" class="felt-event-list"></div>
+            <div class="felt-chart-footnote">빈 날짜는 선으로 연결하지 않고 공백으로 표시합니다. FELT 교체 시점은 세로선으로, 운휴·현장 메모는 아래 이력으로 확인합니다. 엑셀 원본에 단위가 없는 항목은 수치만 표시합니다.</div>
+          </div>
+        </section>
+        <section id="compare-control-panel" class="panel compare-control-panel compare-view-panel" hidden>
           <div class="compare-filter-grid">
             <label><span>검사항목</span><select id="compare-measure"></select></label>
             <label><span>비교 기간</span><select id="compare-period"><option value="all">전체 기간</option><option value="month">월 선택</option><option value="custom">기간 직접 선택</option></select></label>
@@ -685,15 +725,16 @@ app.get('/compare', (c) => {
           <div id="compare-target-list" class="compare-target-list"><div class="inspection-loading">품목 목록을 불러오는 중입니다.</div></div>
           <div class="compare-actions"><p id="compare-status" role="status">조건을 선택하면 그래프를 표시합니다.</p><button type="button" id="run-comparison" class="primary-button">상자그림 비교</button></div>
         </section>
-        <section class="panel compare-chart-panel">
+        <section id="compare-distribution-panel" class="panel compare-chart-panel compare-view-panel" hidden>
           <div class="inspection-panel-heading"><div><h2 id="compare-chart-title">비교 결과</h2><p id="compare-chart-subtitle">선택한 데이터의 중앙값과 사분위 범위를 함께 표시합니다.</p></div><span id="compare-sample-total" class="data-badge">—</span></div>
           <div id="compare-chart" class="compare-chart-area"><div class="compare-empty-state">검사항목·기간·비교 대상을 선택한 뒤 ‘상자그림 비교’를 누르세요.</div></div>
           <div class="boxplot-legend compare-legend"><span><i class="legend-box"></i>25–75 백분위</span><span><i class="legend-median"></i>중앙값</span><span><i class="legend-whisker"></i>수염</span><span><i class="legend-outlier"></i>이상치</span></div>
-          <p class="table-disclaimer">표본 수가 적은 품목은 상자그림 해석에 주의하세요. 품명 별칭은 표준 품명으로 묶어 비교합니다.</p>
+            <p class="table-disclaimer">분포 비교는 선택한 기간의 검사값을 합쳐 품목별 분포를 보여줍니다. 품명 별칭은 표준 품명으로 묶습니다.</p>
         </section>
         <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/inspection">초지345 원본 데이터</a></span></footer>
       </main>
-      <script src="/static/compare.js" defer></script>
+          <script src="/static/compare.js" defer></script>
+          <script src="/static/compare-trends.js" defer></script>
     </div>
   )
 })
