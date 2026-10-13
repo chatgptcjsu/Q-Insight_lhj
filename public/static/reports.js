@@ -80,7 +80,7 @@
     importPreview = result
     preview.hidden = false
     preview.className = `report-import-preview ${result.conflictCount ? 'has-conflicts' : 'is-ready'}`
-    preview.textContent = `분석 반영 미리보기 — 신규 ${result.rows.length.toLocaleString('ko-KR')}건 · 기존과 동일 ${result.duplicateCount.toLocaleString('ko-KR')}건 · 값이 달라 확인 필요 ${result.conflictCount.toLocaleString('ko-KR')}건 · 형식 제외 ${result.skippedCount.toLocaleString('ko-KR')}행. 저장하면 신규 건만 추가하고 기존 행은 변경하지 않습니다.`
+    preview.textContent = `분석 반영 미리보기 — 신규 ${result.newCount.toLocaleString('ko-KR')}건 · 수정 반영 ${result.updatedCount.toLocaleString('ko-KR')}건 · 기존과 동일 ${result.duplicateCount.toLocaleString('ko-KR')}건 · 충돌로 보류 ${result.conflictCount.toLocaleString('ko-KR')}건 · 형식 제외 ${result.skippedCount.toLocaleString('ko-KR')}행. 저장하면 신규 행은 추가하고, 같은 LOT의 측정값은 최신 엑셀 값으로 갱신합니다.`
   }
 
   async function prepareExcelImport(file) {
@@ -93,14 +93,15 @@
     const datasetPromise = window.qInsightLoadInspectionDataset()
     const workbook = window.XLSX.read(await file.arrayBuffer(), {
       type: 'array',
-      cellDates: true,
+      cellDates: false,
       dense: true,
       sheets: ['초지345'],
-      sheetRows: 10000,
+      sheetRows: 20000,
     })
     const sheet = workbook.Sheets['초지345']
     if (!sheet) throw new Error('엑셀에서 `초지345` 시트를 찾을 수 없습니다.')
     const sourceRows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null })
+    if (sourceRows.length >= 20000) throw new Error('초지345 시트가 20,000행 처리 한도를 넘었습니다. 원본 범위를 확인한 뒤 문의해 주세요.')
     const headings = sourceRows[2] || []
     if (!String(headings[1] || '').includes('생산호기') || !String(headings[2] || '').includes('날짜')) {
       throw new Error('초지345 시트의 열 구조가 예상과 다릅니다. 원본 데이터는 추가하지 않았습니다.')
@@ -114,6 +115,7 @@
     })
 
     const newRows = []
+    const updatedRows = []
     const incoming = new Map()
     let duplicateCount = 0
     let conflictCount = 0
@@ -149,12 +151,12 @@
       const previous = existing.get(key)
       if (previous) {
         if (sameRecord(previous, first.values)) duplicateCount += 1
-        else conflictCount += 1
+        else updatedRows.push({ ...first, operation: 'update' })
         return
       }
-      newRows.push(first)
+      newRows.push({ ...first, operation: 'insert' })
     })
-    const result = { rows: newRows, duplicateCount, conflictCount, skippedCount }
+    const result = { rows: [...newRows, ...updatedRows], newCount: newRows.length, updatedCount: updatedRows.length, duplicateCount, conflictCount, skippedCount }
     renderPreview(result)
     setStatus('엑셀 비교가 완료됐습니다. 미리보기 결과를 확인한 뒤 저장해 주세요.', 'success')
     return result
@@ -178,7 +180,7 @@
         cell(row, report.note || '—', 'report-note-cell')
         cell(row, formatSize(report.size_bytes))
         const summary = report.import_status === 'imported' || report.import_status === 'needs_review'
-          ? `신규 ${Number(report.imported_count || 0)}건 · 중복 ${Number(report.duplicate_count || 0)}건${Number(report.conflict_count || 0) ? ` · 확인 ${Number(report.conflict_count)}건` : ''}${Number(report.skipped_count || 0) ? ` · 제외 ${Number(report.skipped_count)}건` : ''}`
+          ? `신규 ${Number(report.imported_count || 0)}건 · 수정 ${Number(report.updated_count || 0)}건 · 중복 ${Number(report.duplicate_count || 0)}건${Number(report.conflict_count || 0) ? ` · 보류 ${Number(report.conflict_count)}건` : ''}${Number(report.skipped_count || 0) ? ` · 제외 ${Number(report.skipped_count)}건` : ''}`
           : report.import_status === 'failed' ? '분석 반영 실패' : report.import_status === 'archive_only' ? '원본만 보관' : '미처리'
         const summaryCell = cell(row, summary, 'report-import-cell')
         if (report.import_status === 'needs_review' || Number(report.conflict_count || 0)) summaryCell.classList.add('report-import-warning')
@@ -191,7 +193,7 @@
         download.textContent = '다운로드'
         download.setAttribute('aria-label', `${report.original_name} 다운로드`)
         actions.append(download)
-        if (Number(report.imported_count || 0) === 0) {
+        if (Number(report.imported_count || 0) === 0 && Number(report.updated_count || 0) === 0) {
           const remove = document.createElement('button')
           remove.type = 'button'
           remove.className = 'report-delete-button'
@@ -256,7 +258,7 @@
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || '파일을 저장하지 못했습니다.')
       if (isExcel) {
-        setStatus(`저장 완료 — 신규 ${Number(result.importedCount || 0).toLocaleString('ko-KR')}건 반영, 동일 ${Number(result.duplicateCount || 0).toLocaleString('ko-KR')}건 건너뜀, 확인 필요 ${Number(result.conflictCount || 0).toLocaleString('ko-KR')}건.`, result.conflictCount ? 'warning' : 'success')
+        setStatus(`저장 완료 — 신규 ${Number(result.importedCount || 0).toLocaleString('ko-KR')}건 추가, 기존값 ${Number(result.updatedCount || 0).toLocaleString('ko-KR')}건 갱신, 동일 ${Number(result.duplicateCount || 0).toLocaleString('ko-KR')}건 건너뜀, 충돌 보류 ${Number(result.conflictCount || 0).toLocaleString('ko-KR')}건.`, result.conflictCount || result.skippedCount ? 'warning' : 'success')
       } else {
         setStatus('원본 파일을 보관했습니다. PDF 내용은 분석 데이터에 반영되지 않습니다.', 'success')
       }
