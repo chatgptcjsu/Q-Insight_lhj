@@ -11,6 +11,7 @@
   const isProductPage = location.pathname === '/products'
   let mode = 'login'
   let redirectToProducts = false
+  const postLoginDestination = () => new URLSearchParams(location.search).get('next') === '/reports' ? '/reports' : '/products'
 
   function setStatus(message, kind = '') {
     status.textContent = message
@@ -134,7 +135,7 @@
     if (isProductPage) location.reload()
     else if (redirectToProducts) {
       redirectToProducts = false
-      location.assign('/products')
+      location.assign(postLoginDestination())
     }
   }
 
@@ -156,7 +157,7 @@
         if (isProductPage) location.reload()
         else if (redirectToProducts) {
           redirectToProducts = false
-          location.assign('/products')
+          location.assign(postLoginDestination())
         }
         return
       }

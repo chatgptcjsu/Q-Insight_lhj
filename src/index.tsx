@@ -70,12 +70,30 @@ const formatStatistic = (value: number | string | null) => {
 type D1Statement = {
   bind(...values: unknown[]): D1Statement
   first<T = Record<string, unknown>>(): Promise<T | null>
+  all<T = Record<string, unknown>>(): Promise<{ results: T[] }>
   run(): Promise<unknown>
 }
-type AppBindings = { DB: { prepare(query: string): D1Statement } }
+type R2Bucket = {
+  put(key: string, value: ArrayBuffer, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> }): Promise<unknown>
+  get(key: string): Promise<{ body: ReadableStream; httpMetadata?: { contentType?: string } } | null>
+  delete(key: string): Promise<void>
+}
+type AppBindings = { DB: { prepare(query: string): D1Statement }; REPORTS: R2Bucket }
 type AdminRecord = { pin_hash: string; must_change: number; recovery_hash: string | null }
-type AdminSession = { must_change: number }
 type AppContext = Context<{ Bindings: AppBindings }>
+type StoredReport = { id: string; received_date: string; original_name: string; content_type: string; size_bytes: number; note: string | null; uploaded_at: string }
+const MAX_REPORT_BYTES = 25 * 1024 * 1024
+const ALLOWED_REPORT_TYPES: Record<string, { mime: string; signature: number[] }> = {
+  xlsx: { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', signature: [0x50, 0x4b, 0x03, 0x04] },
+  xls: { mime: 'application/vnd.ms-excel', signature: [0xd0, 0xcf, 0x11, 0xe0] },
+  pdf: { mime: 'application/pdf', signature: [0x25, 0x50, 0x44, 0x46] },
+}
+const isValidReportDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+const getReportKey = (id: string) => `inspection-reports/${id}`
 
 const app = new Hono<{ Bindings: AppBindings }>()
 app.use(renderer)
@@ -139,6 +157,10 @@ const clearFailedAttempts = async (c: AppContext) => {
   await c.env.DB.prepare('DELETE FROM admin_attempts WHERE client_key = ?').bind(key).run()
 }
 const pinIsValid = (pin: unknown) => typeof pin === 'string' && /^[0-9]{4,12}$/.test(pin)
+const hasAdminAccess = async (c: AppContext) => {
+  const session = await getAdminSession(c)
+  return Boolean(session && !session.admin.must_change)
+}
 
 app.get('/api/admin/status', async (c) => {
   const admin = await getAdminRecord(c.env.DB)
@@ -217,6 +239,70 @@ app.post('/api/admin/logout', async (c) => {
   return c.json({ success: true })
 })
 
+app.get('/api/reports', async (c) => {
+  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const result = await c.env.DB.prepare('SELECT id, received_date, original_name, content_type, size_bytes, note, uploaded_at FROM inspection_reports ORDER BY received_date DESC, uploaded_at DESC').all<StoredReport>()
+  return c.json({ reports: result.results })
+})
+
+app.post('/api/reports', async (c) => {
+  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const contentLength = Number(c.req.header('content-length') || 0)
+  if (contentLength > MAX_REPORT_BYTES + 512 * 1024) return c.json({ error: '파일은 25MB 이하만 첨부할 수 있습니다.' }, 413)
+  const body = await c.req.parseBody().catch(() => null)
+  const file = body?.file
+  const receivedDate = String(body?.receivedDate || '')
+  const note = String(body?.note || '').trim().slice(0, 500)
+  if (!(file instanceof File) || !file.size) return c.json({ error: '첨부할 검사성적서 파일을 선택해 주세요.' }, 400)
+  if (file.size > MAX_REPORT_BYTES) return c.json({ error: '파일은 25MB 이하만 첨부할 수 있습니다.' }, 413)
+  if (!isValidReportDate(receivedDate)) return c.json({ error: '수령일을 올바르게 입력해 주세요.' }, 400)
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  const format = ALLOWED_REPORT_TYPES[extension]
+  if (!format) return c.json({ error: 'Excel (.xlsx, .xls) 또는 PDF 파일만 첨부할 수 있습니다.' }, 415)
+  const data = await file.arrayBuffer()
+  const bytes = new Uint8Array(data)
+  if (!format.signature.every((value, index) => bytes[index] === value)) return c.json({ error: '파일 내용이 확장자와 일치하지 않습니다.' }, 415)
+  const id = crypto.randomUUID()
+  const objectKey = getReportKey(id)
+  const uploadedAt = new Date().toISOString()
+  try {
+    await c.env.REPORTS.put(objectKey, data, { httpMetadata: { contentType: format.mime }, customMetadata: { originalName: file.name, receivedDate } })
+    await c.env.DB.prepare('INSERT INTO inspection_reports (id, received_date, original_name, object_key, content_type, size_bytes, note, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, receivedDate, file.name, objectKey, format.mime, file.size, note || null, uploadedAt).run()
+  } catch {
+    await c.env.REPORTS.delete(objectKey).catch(() => {})
+    return c.json({ error: '파일 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.' }, 500)
+  }
+  return c.json({ success: true, id })
+})
+
+app.get('/api/reports/:id/download', async (c) => {
+  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const report = await c.env.DB.prepare('SELECT id, original_name, object_key, content_type FROM inspection_reports WHERE id = ?').bind(c.req.param('id')).first<{ id: string; original_name: string; object_key: string; content_type: string }>()
+  if (!report) return c.notFound()
+  const object = await c.env.REPORTS.get(report.object_key)
+  if (!object) return c.notFound()
+  const safeAsciiName = [...report.original_name].map((character) => {
+    const code = character.charCodeAt(0)
+    return code >= 0x20 && code <= 0x7e && character !== '"' && character !== '\\' ? character : '_'
+  }).join('')
+  return new Response(object.body, { headers: {
+    'Content-Type': report.content_type || object.httpMetadata?.contentType || 'application/octet-stream',
+    'Content-Disposition': `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${encodeURIComponent(report.original_name)}`,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+  } })
+})
+
+app.delete('/api/reports/:id', async (c) => {
+  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const report = await c.env.DB.prepare('SELECT object_key FROM inspection_reports WHERE id = ?').bind(c.req.param('id')).first<{ object_key: string }>()
+  if (!report) return c.notFound()
+  await c.env.REPORTS.delete(report.object_key)
+  await c.env.DB.prepare('DELETE FROM inspection_reports WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ success: true })
+})
+
 const machines = [
   {
     id: '3',
@@ -265,7 +351,7 @@ const machines = [
   },
 ]
 
-const navigation = (activeId?: string, activePage?: 'inspection' | 'compare') => (
+const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | 'reports') => (
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="품질관리 홈">
       <span class="brand-mark">Q</span>
@@ -281,6 +367,9 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare') =>
       </a>
       <a class={`nav-link ${activePage === 'compare' ? 'active' : ''}`} href="/compare">
         <span class="nav-icon overview-icon">↗</span><span>품질·FELT 추이</span>
+      </a>
+      <a class={`nav-link ${activePage === 'reports' ? 'active' : ''}`} href="/reports">
+        <span class="nav-icon overview-icon">⇧</span><span>검사성적서 첨부</span>
       </a>
       {machines.map((machine) => (
         <a class={`nav-link ${activeId === machine.id ? 'active' : ''}`} href={`/machine/${machine.id}`}>
@@ -662,6 +751,37 @@ app.get('/products', async (c) => {
         <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/compare">상자그림 비교로 이동</a></span></footer>
       </main>
       <script src="/static/products.js" defer></script>
+    </div>
+  )
+})
+
+app.get('/reports', async (c) => {
+  if (!await hasAdminAccess(c)) return c.redirect('/?admin=1&next=%2Freports')
+  return c.render(
+    <div class="app-shell">
+      {navigation(undefined, 'reports')}
+      <main class="main-content data-admin-content">
+        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>검사성적서 첨부</strong></div><div class="source-chip"><span class="source-dot"></span>일일 수령 파일 관리</div></header>
+        <section class="page-heading"><div><p class="eyebrow">DAILY INSPECTION REPORTS</p><h1>검사성적서 보관함</h1><p class="page-description">매일 아침 받은 신규·변경 검사성적서를 날짜별로 첨부하고 이전 버전도 함께 보관합니다.</p></div></section>
+        <section class="report-info-strip"><span class="alias-info-icon">i</span><p>첨부된 원본 파일은 비공개 R2 저장소에 보관하고, 이력은 D1에 기록합니다. 파일은 Excel (.xlsx, .xls) 또는 PDF, 최대 25MB까지 가능합니다. 같은 날짜에 여러 파일을 올려도 기존 파일은 덮어쓰지 않습니다.</p></section>
+        <section class="panel report-upload-panel">
+          <div class="inspection-panel-heading"><div><h2>새 성적서 첨부</h2><p>수령일과 간단한 변경 메모를 남기면 이력에서 바로 찾을 수 있습니다.</p></div><span class="data-badge">관리자 전용</span></div>
+          <form id="report-upload-form" class="report-upload-form">
+            <label><span>수령일</span><input id="report-received-date" name="receivedDate" type="date" required /></label>
+            <label class="report-file-field"><span>검사성적서 파일</span><input id="report-file" name="file" type="file" accept=".xlsx,.xls,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /><small>예: 2026 화장지 검사성적서.xlsx · 최대 25MB</small></label>
+            <label class="report-note-field"><span>변경 내용 / 메모 (선택)</span><input id="report-note" name="note" type="text" maxLength={500} placeholder="예: 신규 검사 행 추가, 규격 변경" /></label>
+            <button id="report-upload-button" type="submit" class="primary-button">성적서 저장</button>
+          </form>
+          <div id="report-upload-status" class="report-status" role="status" aria-live="polite"></div>
+        </section>
+        <section class="panel report-history-panel">
+          <div class="inspection-panel-heading"><div><h2>첨부 이력</h2><p>수령일 최신순으로 표시합니다. 파일을 내려받거나 불필요한 항목을 삭제할 수 있습니다.</p></div><button type="button" id="refresh-reports" class="quiet-button">새로고침</button></div>
+          <div class="report-table-wrap"><table class="report-table"><thead><tr><th>수령일</th><th>파일명</th><th>메모</th><th>파일 크기</th><th>등록 시각</th><th>관리</th></tr></thead><tbody id="report-list"><tr><td colSpan={6} class="inspection-loading">첨부 이력을 불러오는 중입니다.</td></tr></tbody></table></div>
+          <p class="table-disclaimer">현재 첨부하는 파일의 원본은 보관되지만, 대시보드의 기존 검사 통계·원본 표를 자동 갱신하지는 않습니다. 통계 반영이 필요하면 엑셀 열 구조를 검토한 뒤 별도의 가져오기·검증 절차를 연결해야 합니다.</p>
+        </section>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/">전체 현황으로 돌아가기</a></span></footer>
+      </main>
+      <script src="/static/reports.js" defer></script>
     </div>
   )
 })
