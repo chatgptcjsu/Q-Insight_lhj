@@ -1,5 +1,4 @@
 (() => {
-  const DATA_URL = '/static/inspection-data.json'
   const ACK_KEY = 'q-insight-inspection-alerts-reviewed-v1'
   const PRODUCT_SETTINGS_KEY = 'q-insight-product-aliases-v1'
   const QUALITY_COLUMNS = [7, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 38, 39, 40, 41]
@@ -324,9 +323,7 @@
 
   async function start() {
     try {
-      const response = await fetch(DATA_URL)
-      if (!response.ok) throw new Error(`초지345 데이터를 불러오지 못했습니다. (${response.status})`)
-      state.dataset = await response.json()
+      state.dataset = await window.qInsightLoadInspectionDataset()
       appendOptions(elements.machine, state.dataset.rows.map((row) => row.values[1]), '전체 호기')
       appendOptions(elements.product, state.dataset.rows.filter((row) => !row.auxiliaryOnly).map((row) => rowField(row, 10)), '전체 품명')
       appendOptions(elements.verdict, state.dataset.rows.filter((row) => !row.auxiliaryOnly).map((row) => row.values[36]), '전체 판정')

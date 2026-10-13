@@ -1,5 +1,4 @@
 (() => {
-  const DATA_URL = '/static/inspection-data.json'
   const SETTINGS_KEY = 'q-insight-product-aliases-v1'
   const DEFAULT_ALIASES = [
     { machine: '초지3', alias: '깨/나 (일반) 2P (초3)', canonical: '깨/나 (일반) 2P' },
@@ -290,9 +289,7 @@
 
   async function start() {
     try {
-      const response = await fetch(DATA_URL)
-      if (!response.ok) throw new Error('원본 품명을 읽을 수 없습니다.')
-      const dataset = await response.json()
+      const dataset = await window.qInsightLoadInspectionDataset()
       const map = new Map()
       dataset.rows.forEach((row) => {
         if (row.auxiliaryOnly) return

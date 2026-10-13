@@ -13,6 +13,7 @@ export const renderer = jsxRenderer(({ children }) => {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <link href="/static/style.css" rel="stylesheet" />
+        <script src="/static/data-loader.js" defer></script>
         <script src="/static/admin-access.js" defer></script>
       </head>
       <body>

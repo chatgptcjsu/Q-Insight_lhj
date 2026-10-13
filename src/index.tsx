@@ -3,6 +3,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { renderer } from './renderer'
 import statisticsJson from './statistics-data.json'
 import boxplotJson from './boxplot-data.json'
+import inspectionJson from '../public/static/inspection-data.json'
 
 type StatisticsSectionKey = 'weight' | 'burst' | 'tensile'
 type StatisticsRow = {
@@ -56,6 +57,7 @@ type BoxplotData = {
 
 const statisticsData = statisticsJson as StatisticsData
 const boxplotData = boxplotJson as BoxplotData
+const inspectionData = inspectionJson as InspectionDataset
 const statisticsTabs: Array<{ key: StatisticsSectionKey; label: string }> = [
   { key: 'weight', label: '평량' },
   { key: 'burst', label: '파열강도' },
@@ -71,17 +73,24 @@ type D1Statement = {
   bind(...values: unknown[]): D1Statement
   first<T = Record<string, unknown>>(): Promise<T | null>
   all<T = Record<string, unknown>>(): Promise<{ results: T[] }>
-  run(): Promise<unknown>
+  run(): Promise<{ meta?: { changes?: number } }>
+}
+type D1Database = {
+  prepare(query: string): D1Statement
+  batch(statements: D1Statement[]): Promise<Array<{ meta?: { changes?: number } }>>
 }
 type R2Bucket = {
   put(key: string, value: ArrayBuffer, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> }): Promise<unknown>
   get(key: string): Promise<{ body: ReadableStream; httpMetadata?: { contentType?: string } } | null>
   delete(key: string): Promise<void>
 }
-type AppBindings = { DB: { prepare(query: string): D1Statement }; REPORTS: R2Bucket }
+type AppBindings = { DB: D1Database; REPORTS: R2Bucket }
 type AdminRecord = { pin_hash: string; must_change: number; recovery_hash: string | null }
 type AppContext = Context<{ Bindings: AppBindings }>
-type StoredReport = { id: string; received_date: string; original_name: string; content_type: string; size_bytes: number; note: string | null; uploaded_at: string }
+type StoredReport = { id: string; received_date: string; original_name: string; content_type: string; size_bytes: number; note: string | null; uploaded_at: string; import_status?: string; imported_count?: number; duplicate_count?: number; conflict_count?: number; processed_at?: string | null }
+type ImportRow = { values: unknown[]; excelRow: number }
+type InspectionRow = { id: string; excelRow: number; auxiliaryOnly: boolean; values: unknown[] }
+type InspectionDataset = { sourceFile: string; sourceSheet: string; headers: Array<{ index: number; label: string }>; rows: InspectionRow[]; rowCount: number; recordCount: number; auxiliaryRowCount: number; asOf: string }
 const MAX_REPORT_BYTES = 25 * 1024 * 1024
 const ALLOWED_REPORT_TYPES: Record<string, { mime: string; signature: number[] }> = {
   xlsx: { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', signature: [0x50, 0x4b, 0x03, 0x04] },
@@ -94,6 +103,66 @@ const isValidReportDate = (value: string) => {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
 const getReportKey = (id: string) => `inspection-reports/${id}`
+const normalizedDate = (value: unknown) => {
+  const text = String(value ?? '').trim()
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : text.slice(0, 10)
+}
+const inspectionRecordKey = (values: unknown[]) => {
+  const machine = String(values[1] ?? '').trim()
+  const date = normalizedDate(values[2])
+  const lot = String(values[9] ?? '').trim()
+  if (!['초지3', '초지4', '초지5'].includes(machine) || !isValidReportDate(date) || !lot) return null
+  const hour = Number(values[5] ?? 0)
+  const minute = Number(values[6] ?? 0)
+  if (!Number.isInteger(hour) || hour < 0 || hour > 24 || !Number.isInteger(minute) || minute < 0 || minute > 59) return null
+  return JSON.stringify([machine, date, hour, minute, lot])
+}
+const getInspectionDataset = async (db: D1Database): Promise<InspectionDataset> => {
+  const result = await db.prepare('SELECT record_key, excel_row, values_json FROM inspection_records ORDER BY inspection_date DESC, excel_row DESC').all<{ record_key: string; excel_row: number; values_json: string }>()
+  const rows: InspectionRow[] = result.results.map((record) => ({
+    id: record.record_key,
+    excelRow: record.excel_row,
+    auxiliaryOnly: false,
+    values: JSON.parse(record.values_json) as unknown[],
+  }))
+  const asOf = rows.reduce((latest, row) => String(row.values[2] || '') > latest ? String(row.values[2]) : latest, inspectionData.asOf)
+  return {
+    ...inspectionData,
+    rows: [...rows, ...inspectionData.rows],
+    rowCount: inspectionData.rowCount + rows.length,
+    recordCount: inspectionData.recordCount + rows.length,
+    auxiliaryRowCount: inspectionData.auxiliaryRowCount,
+    asOf,
+  }
+}
+const buildMachineSummary = (machineId: string, dataset: InspectionDataset) => {
+  const machineName = `초지${machineId}`
+  const rows = dataset.rows.filter((row) => !row.auxiliaryOnly && row.values[1] === machineName && isValidReportDate(String(row.values[2] || '')))
+  const monthly = Array(12).fill(0) as number[]
+  rows.forEach((row) => { monthly[Number(String(row.values[2]).slice(5, 7)) - 1] += 1 })
+  const ordered = [...rows].sort((left, right) => {
+    const leftTime = `${left.values[2]}T${String(left.values[5] ?? 0).padStart(2, '0')}:${String(left.values[6] ?? 0).padStart(2, '0')}`
+    const rightTime = `${right.values[2]}T${String(right.values[5] ?? 0).padStart(2, '0')}:${String(right.values[6] ?? 0).padStart(2, '0')}`
+    return rightTime.localeCompare(leftTime) || right.excelRow - left.excelRow
+  })
+  const latestRow = ordered[0]
+  const base = machines.find((machine) => machine.id === machineId)!
+  return {
+    ...base,
+    records: rows.length,
+    failures: rows.filter((row) => String(row.values[36] || '').includes('불합격')).length,
+    latest: latestRow ? String(latestRow.values[2]).replaceAll('-', '.') : base.latest,
+    latestProduct: latestRow ? String(latestRow.values[10] || '—') : base.latestProduct,
+    monthly,
+    recent: ordered.slice(0, 4).map((row) => ({
+      date: String(row.values[2]).slice(5).replace('-', '.'),
+      lot: String(row.values[9] || '—'),
+      product: String(row.values[10] || '—'),
+      weight: typeof row.values[14] === 'number' ? String(row.values[14]) : '—',
+      verdict: String(row.values[36] || '미판정'),
+    })),
+  }
+}
 
 const app = new Hono<{ Bindings: AppBindings }>()
 app.use(renderer)
@@ -239,16 +308,22 @@ app.post('/api/admin/logout', async (c) => {
   return c.json({ success: true })
 })
 
+app.get('/api/inspection-records', async (c) => {
+  const result = await c.env.DB.prepare('SELECT record_key, excel_row, values_json FROM inspection_records ORDER BY inspection_date DESC, excel_row DESC').all<{ record_key: string; excel_row: number; values_json: string }>()
+  c.header('Cache-Control', 'no-store')
+  return c.json({ records: result.results.map((record) => ({ id: record.record_key, excelRow: record.excel_row, auxiliaryOnly: false, values: JSON.parse(record.values_json) })) })
+})
+
 app.get('/api/reports', async (c) => {
   if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
-  const result = await c.env.DB.prepare('SELECT id, received_date, original_name, content_type, size_bytes, note, uploaded_at FROM inspection_reports ORDER BY received_date DESC, uploaded_at DESC').all<StoredReport>()
+  const result = await c.env.DB.prepare('SELECT id, received_date, original_name, content_type, size_bytes, note, uploaded_at, import_status, imported_count, duplicate_count, conflict_count, processed_at FROM inspection_reports ORDER BY received_date DESC, uploaded_at DESC').all<StoredReport>()
   return c.json({ reports: result.results })
 })
 
 app.post('/api/reports', async (c) => {
   if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
   const contentLength = Number(c.req.header('content-length') || 0)
-  if (contentLength > MAX_REPORT_BYTES + 512 * 1024) return c.json({ error: '파일은 25MB 이하만 첨부할 수 있습니다.' }, 413)
+  if (contentLength > MAX_REPORT_BYTES + 2 * 1024 * 1024) return c.json({ error: '파일은 25MB 이하만 첨부할 수 있습니다.' }, 413)
   const body = await c.req.parseBody().catch(() => null)
   const file = body?.file
   const receivedDate = String(body?.receivedDate || '')
@@ -265,15 +340,69 @@ app.post('/api/reports', async (c) => {
   const id = crypto.randomUUID()
   const objectKey = getReportKey(id)
   const uploadedAt = new Date().toISOString()
+  let importRows: ImportRow[] = []
+  let requestedDuplicates = 0
+  let requestedConflicts = 0
+  let importStatus = 'archive_only'
+  if (extension === 'xlsx' || extension === 'xls') {
+    try {
+      const encodedRows = body?.inspectionRows
+      const importPayload = typeof encodedRows === 'string' ? JSON.parse(encodedRows) as { rows?: unknown; duplicateCount?: unknown; conflictCount?: unknown } : null
+      if (importPayload && Array.isArray(importPayload.rows) && importPayload.rows.length <= 20000) {
+        importRows = importPayload.rows.filter((row): row is ImportRow => Boolean(row && typeof row === 'object' && Array.isArray((row as ImportRow).values) && (row as ImportRow).values.length === 44 && Number.isInteger((row as ImportRow).excelRow)))
+        requestedDuplicates = Math.max(0, Math.min(20000, Number(importPayload.duplicateCount) || 0))
+        requestedConflicts = Math.max(0, Math.min(20000, Number(importPayload.conflictCount) || 0))
+        importStatus = 'imported'
+      }
+    } catch {
+      importRows = []
+    }
+  }
   try {
     await c.env.REPORTS.put(objectKey, data, { httpMetadata: { contentType: format.mime }, customMetadata: { originalName: file.name, receivedDate } })
-    await c.env.DB.prepare('INSERT INTO inspection_reports (id, received_date, original_name, object_key, content_type, size_bytes, note, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, receivedDate, file.name, objectKey, format.mime, file.size, note || null, uploadedAt).run()
+    await c.env.DB.prepare('INSERT INTO inspection_reports (id, received_date, original_name, object_key, content_type, size_bytes, note, uploaded_at, import_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, receivedDate, file.name, objectKey, format.mime, file.size, note || null, uploadedAt, importStatus).run()
   } catch {
     await c.env.REPORTS.delete(objectKey).catch(() => {})
     return c.json({ error: '파일 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.' }, 500)
   }
-  return c.json({ success: true, id })
+
+  let importedCount = 0
+  let conflictCount = requestedConflicts
+  let duplicateCount = requestedDuplicates
+  if (importRows.length) {
+    try {
+      const statements: D1Statement[] = []
+      for (const row of importRows) {
+        const recordKey = inspectionRecordKey(row.values)
+        if (!recordKey) { conflictCount += 1; continue }
+        const machine = String(row.values[1]).trim()
+        const inspectionDate = normalizedDate(row.values[2])
+        const values = [...row.values]
+        values[0] = `${Number(inspectionDate.slice(5, 7))}월`
+        values[2] = inspectionDate
+        statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO inspection_records (record_key, report_id, machine, inspection_date, excel_row, values_json, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .bind(recordKey, id, machine, inspectionDate, row.excelRow, JSON.stringify(values), uploadedAt))
+      }
+      for (let offset = 0; offset < statements.length; offset += 80) {
+        const result = await c.env.DB.batch(statements.slice(offset, offset + 80))
+        importedCount += result.reduce((sum, item) => sum + (item.meta?.changes || 0), 0)
+      }
+      duplicateCount += Math.max(0, statements.length - importedCount)
+      importStatus = conflictCount ? 'needs_review' : 'imported'
+      await c.env.DB.prepare('UPDATE inspection_reports SET import_status = ?, imported_count = ?, duplicate_count = ?, conflict_count = ?, processed_at = ? WHERE id = ?')
+        .bind(importStatus, importedCount, duplicateCount, conflictCount, new Date().toISOString(), id).run()
+    } catch {
+      importStatus = 'failed'
+      await c.env.DB.prepare('UPDATE inspection_reports SET import_status = ?, imported_count = ?, duplicate_count = ?, conflict_count = ?, processed_at = ? WHERE id = ?')
+        .bind(importStatus, importedCount, duplicateCount, conflictCount, new Date().toISOString(), id).run()
+    }
+  } else if (extension === 'xlsx' || extension === 'xls') {
+    importStatus = 'archive_only'
+    await c.env.DB.prepare('UPDATE inspection_reports SET import_status = ?, duplicate_count = ?, conflict_count = ?, processed_at = ? WHERE id = ?')
+      .bind(importStatus, duplicateCount, conflictCount, new Date().toISOString(), id).run()
+  }
+  return c.json({ success: true, id, importStatus, importedCount, duplicateCount, conflictCount })
 })
 
 app.get('/api/reports/:id/download', async (c) => {
@@ -296,8 +425,9 @@ app.get('/api/reports/:id/download', async (c) => {
 
 app.delete('/api/reports/:id', async (c) => {
   if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
-  const report = await c.env.DB.prepare('SELECT object_key FROM inspection_reports WHERE id = ?').bind(c.req.param('id')).first<{ object_key: string }>()
+  const report = await c.env.DB.prepare('SELECT object_key, imported_count FROM inspection_reports WHERE id = ?').bind(c.req.param('id')).first<{ object_key: string; imported_count: number }>()
   if (!report) return c.notFound()
+  if (report.imported_count > 0) return c.json({ error: '분석 데이터에 반영된 원본 파일은 삭제할 수 없습니다.' }, 409)
   await c.env.REPORTS.delete(report.object_key)
   await c.env.DB.prepare('DELETE FROM inspection_reports WHERE id = ?').bind(c.req.param('id')).run()
   return c.json({ success: true })
@@ -381,14 +511,19 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | '
     </nav>
     <div class="sidebar-footer">
       <span class="status-dot"></span>
-      <span><strong>검사 데이터 기준</strong><small>2026.10.07까지 반영</small></span>
+      <span><strong>검사 데이터 기준</strong><small>업로드 데이터 포함</small></span>
     </div>
   </aside>
 )
 
-app.get('/', (c) => {
-  const totalRecords = machines.reduce((sum, machine) => sum + machine.records, 0)
-  const totalFailures = machines.reduce((sum, machine) => sum + machine.failures, 0)
+app.get('/', async (c) => {
+  const dataset = await getInspectionDataset(c.env.DB)
+  const liveMachines = machines.map((machine) => buildMachineSummary(machine.id, dataset))
+  const totalRecords = liveMachines.reduce((sum, machine) => sum + machine.records, 0)
+  const totalFailures = liveMachines.reduce((sum, machine) => sum + machine.failures, 0)
+  const machineDates = dataset.rows.filter((row) => !row.auxiliaryOnly && ['초지3', '초지4', '초지5'].includes(String(row.values[1]))).map((row) => String(row.values[2])).filter((date) => isValidReportDate(date)).sort()
+  const latestInspectionDate = machineDates.at(-1) || '2026-10-07'
+  const firstInspectionDate = machineDates[0] || '2026-01-01'
   return c.render(
     <div class="app-shell">
       {navigation()}
@@ -403,7 +538,7 @@ app.get('/', (c) => {
             <h1>초지 공정 품질 현황</h1>
             <p class="page-description">호기별 검사 기록과 주요 품질 지표를 한곳에서 확인하세요.</p>
           </div>
-          <div class="date-range"><span class="calendar-icon">▣</span>2026.01.01 – 2026.10.07</div>
+          <div class="date-range"><span class="calendar-icon">▣</span>{firstInspectionDate.replaceAll('-', '.')} – {latestInspectionDate.replaceAll('-', '.')}</div>
         </section>
         <section class="summary-grid" aria-label="전체 품질 요약">
           <article class="summary-card">
@@ -428,7 +563,7 @@ app.get('/', (c) => {
             <span class="section-count">3 MACHINES</span>
           </div>
           <div class="machine-grid">
-            {machines.map((machine) => (
+            {liveMachines.map((machine) => (
               <a class="machine-card" href={`/machine/${machine.id}`}>
                 <div class="machine-card-top">
                   <span class="machine-symbol">{machine.id}</span>
@@ -460,9 +595,10 @@ app.get('/', (c) => {
   )
 })
 
-app.get('/machine/:id', (c) => {
-  const machine = machines.find((item) => item.id === c.req.param('id'))
-  if (!machine) return c.notFound()
+app.get('/machine/:id', async (c) => {
+  const baseMachine = machines.find((item) => item.id === c.req.param('id'))
+  if (!baseMachine) return c.notFound()
+  const machine = buildMachineSummary(baseMachine.id, await getInspectionDataset(c.env.DB))
 
   const monthLabels = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월']
   const maxMonthly = Math.max(...machine.monthly)
@@ -763,7 +899,7 @@ app.get('/reports', async (c) => {
       <main class="main-content data-admin-content">
         <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>검사성적서 첨부</strong></div><div class="source-chip"><span class="source-dot"></span>일일 수령 파일 관리</div></header>
         <section class="page-heading"><div><p class="eyebrow">DAILY INSPECTION REPORTS</p><h1>검사성적서 보관함</h1><p class="page-description">매일 아침 받은 신규·변경 검사성적서를 날짜별로 첨부하고 이전 버전도 함께 보관합니다.</p></div></section>
-        <section class="report-info-strip"><span class="alias-info-icon">i</span><p>첨부된 원본 파일은 비공개 R2 저장소에 보관하고, 이력은 D1에 기록합니다. 파일은 Excel (.xlsx, .xls) 또는 PDF, 최대 25MB까지 가능합니다. 같은 날짜에 여러 파일을 올려도 기존 파일은 덮어쓰지 않습니다.</p></section>
+        <section class="report-info-strip"><span class="alias-info-icon">i</span><p>Excel 파일을 첨부하면 `초지345` 시트에서 초지 3·4·5호기 검사행을 읽어 신규 LOT만 원본 데이터에 추가합니다. 기존 기록과 일치하는 행은 건너뛰고, 같은 식별정보인데 값이 달라진 행은 기존 값을 덮어쓰지 않고 확인 대상으로 남깁니다. 원본 파일과 처리 결과 이력도 보관합니다.</p></section>
         <section class="panel report-upload-panel">
           <div class="inspection-panel-heading"><div><h2>새 성적서 첨부</h2><p>수령일과 간단한 변경 메모를 남기면 이력에서 바로 찾을 수 있습니다.</p></div><span class="data-badge">관리자 전용</span></div>
           <form id="report-upload-form" class="report-upload-form">
@@ -772,15 +908,17 @@ app.get('/reports', async (c) => {
             <label class="report-note-field"><span>변경 내용 / 메모 (선택)</span><input id="report-note" name="note" type="text" maxLength={500} placeholder="예: 신규 검사 행 추가, 규격 변경" /></label>
             <button id="report-upload-button" type="submit" class="primary-button">성적서 저장</button>
           </form>
+          <div id="report-import-preview" class="report-import-preview" role="status" aria-live="polite" hidden></div>
           <div id="report-upload-status" class="report-status" role="status" aria-live="polite"></div>
         </section>
         <section class="panel report-history-panel">
           <div class="inspection-panel-heading"><div><h2>첨부 이력</h2><p>수령일 최신순으로 표시합니다. 파일을 내려받거나 불필요한 항목을 삭제할 수 있습니다.</p></div><button type="button" id="refresh-reports" class="quiet-button">새로고침</button></div>
-          <div class="report-table-wrap"><table class="report-table"><thead><tr><th>수령일</th><th>파일명</th><th>메모</th><th>파일 크기</th><th>등록 시각</th><th>관리</th></tr></thead><tbody id="report-list"><tr><td colSpan={6} class="inspection-loading">첨부 이력을 불러오는 중입니다.</td></tr></tbody></table></div>
-          <p class="table-disclaimer">현재 첨부하는 파일의 원본은 보관되지만, 대시보드의 기존 검사 통계·원본 표를 자동 갱신하지는 않습니다. 통계 반영이 필요하면 엑셀 열 구조를 검토한 뒤 별도의 가져오기·검증 절차를 연결해야 합니다.</p>
+          <div class="report-table-wrap"><table class="report-table"><thead><tr><th>수령일</th><th>파일명</th><th>메모</th><th>파일 크기</th><th>분석 반영 결과</th><th>등록 시각</th><th>관리</th></tr></thead><tbody id="report-list"><tr><td colSpan={7} class="inspection-loading">첨부 이력을 불러오는 중입니다.</td></tr></tbody></table></div>
+          <p class="table-disclaimer">신규 검사행은 초지345 원본 표, 호기별 건수·월별 검사 추이 및 품질 비교·분포 화면에 추가됩니다. 기존 행은 유지됩니다. 호기 상세의 사전 계산 통계표와 월별 상자그림은 새 파일만으로 다시 계산하지 않으며, 변경된 기존 측정값은 덮어쓰지 않고 재확인 대상으로 표시합니다.</p>
         </section>
         <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/">전체 현황으로 돌아가기</a></span></footer>
       </main>
+      <script src="https://cdn.jsdelivr.net/npm/@e965/xlsx@0.20.3/dist/xlsx.full.min.js" defer></script>
       <script src="/static/reports.js" defer></script>
     </div>
   )
