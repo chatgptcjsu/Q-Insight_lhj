@@ -7,26 +7,15 @@
     { key: 'weight', label: '평량', column: 14, unit: 'g/㎡' },
     { key: 'white', label: '백색도', column: 15, unit: '%' },
     { key: 'burst', label: '파열강도', column: 16, unit: 'mN' },
-    { key: 'md1', label: 'MD-1', column: 17, unit: 'gf/100mm' },
-    { key: 'md2', label: 'MD-2', column: 18, unit: 'gf/100mm' },
-    { key: 'md3', label: 'MD-3', column: 19, unit: 'gf/100mm' },
-    { key: 'md4', label: 'MD-4', column: 20, unit: 'gf/100mm' },
     { key: 'md', label: 'MD', column: 21, unit: 'gf/100mm' },
     { key: 'cd', label: 'CD', column: 22, unit: 'gf/100mm' },
     { key: 'wetCd', label: 'wet-CD', column: 23, unit: 'gf/100mm' },
     { key: 'absorb', label: '흡수도', column: 24, unit: 'mm' },
-    { key: 'elong1', label: '신1', column: 25, unit: '%' },
-    { key: 'elong2', label: '신2', column: 26, unit: '%' },
-    { key: 'elong3', label: '신3', column: 27, unit: '%' },
     { key: 'elong4', label: '신4', column: 28, unit: '%' },
     { key: 'elong', label: '신장율2', column: 29, unit: '%' },
     { key: 'thickness', label: '두께', column: 30, unit: 'mm' },
     { key: 'wetDissolve', label: '물풀링성', column: 31, unit: 'sec' },
     { key: 'airPerm', label: '투기도', column: 32, unit: 'cc/㎠/sec' },
-    { key: 'md3ply', label: 'MD(3겹)', column: 38, unit: 'gf/100mm' },
-    { key: 'cd3ply', label: 'CD(3겹)', column: 39, unit: 'gf/100mm' },
-    { key: 'md3ply2', label: 'MD(3겹)2', column: 40, unit: 'gf/100mm' },
-    { key: 'cd3ply3', label: 'CD(3겹)3', column: 41, unit: 'gf/100mm' },
   ]
   const METRICS = [
     { key: 'speed', label: '선속', unit: '' },
@@ -160,7 +149,9 @@
     })
     qualityTargets = [...grouped.values()].map((target) => ({ ...target, sourceNames: [...target.sourceNames] }))
       .sort((left, right) => left.machine.localeCompare(right.machine, 'ko') || left.product.localeCompare(right.product, 'ko'))
-    qualityMonths = [...new Set(qualityTargets.flatMap((target) => [...target.counts.keys()]))].sort()
+    const observedMonths = [...new Set(qualityTargets.flatMap((target) => [...target.counts.keys()]))].sort()
+    const years = [...new Set(observedMonths.map((month) => month.slice(0, 4)))].sort()
+    qualityMonths = years.flatMap((year) => Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`))
   }
 
   function renderQualityMonthOptions() {
