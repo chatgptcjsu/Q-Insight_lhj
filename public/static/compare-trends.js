@@ -1,5 +1,4 @@
 (() => {
-  const QUALITY_DATA_URL = '/static/inspection-data.json'
   const FELT_DATA_URL = '/static/felt-operations.json'
   const ALIAS_KEY = 'q-insight-product-aliases-v1'
   const COLORS = ['#4268e8', '#43a486', '#d9805f', '#8a6cc4', '#3295aa', '#bf9b3b']

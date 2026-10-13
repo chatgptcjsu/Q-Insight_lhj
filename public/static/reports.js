@@ -135,22 +135,26 @@
         skippedCount += 1
         continue
       }
-      const previousIncoming = incoming.get(key)
-      if (previousIncoming) {
-        if (sameRecord(previousIncoming, values)) duplicateCount += 1
-        else conflictCount += 1
-        continue
+      if (!incoming.has(key)) incoming.set(key, [])
+      incoming.get(key).push({ values, excelRow: index + 1 })
+    }
+
+    incoming.forEach((candidates, key) => {
+      const [first, ...rest] = candidates
+      duplicateCount += rest.length
+      if (rest.some((candidate) => !sameRecord(first.values, candidate.values))) {
+        conflictCount += 1
+        return
       }
-      incoming.set(key, values)
       const previous = existing.get(key)
       if (previous) {
-        if (sameRecord(previous, values)) duplicateCount += 1
+        if (sameRecord(previous, first.values)) duplicateCount += 1
         else conflictCount += 1
-        continue
+        return
       }
-      newRows.push({ values, excelRow: index + 1 })
-    }
-    const result = { rows: newRows, duplicateCount, conflictCount: conflictCount + skippedCount, skippedCount }
+      newRows.push(first)
+    })
+    const result = { rows: newRows, duplicateCount, conflictCount, skippedCount }
     renderPreview(result)
     setStatus('엑셀 비교가 완료됐습니다. 미리보기 결과를 확인한 뒤 저장해 주세요.', 'success')
     return result
@@ -174,7 +178,7 @@
         cell(row, report.note || '—', 'report-note-cell')
         cell(row, formatSize(report.size_bytes))
         const summary = report.import_status === 'imported' || report.import_status === 'needs_review'
-          ? `신규 ${Number(report.imported_count || 0)}건 · 중복 ${Number(report.duplicate_count || 0)}건${Number(report.conflict_count || 0) ? ` · 확인 ${Number(report.conflict_count)}건` : ''}`
+          ? `신규 ${Number(report.imported_count || 0)}건 · 중복 ${Number(report.duplicate_count || 0)}건${Number(report.conflict_count || 0) ? ` · 확인 ${Number(report.conflict_count)}건` : ''}${Number(report.skipped_count || 0) ? ` · 제외 ${Number(report.skipped_count)}건` : ''}`
           : report.import_status === 'failed' ? '분석 반영 실패' : report.import_status === 'archive_only' ? '원본만 보관' : '미처리'
         const summaryCell = cell(row, summary, 'report-import-cell')
         if (report.import_status === 'needs_review' || Number(report.conflict_count || 0)) summaryCell.classList.add('report-import-warning')

@@ -121,7 +121,7 @@ h1, h2, h3, p { margin-top: 0; }
 .line-top { top: 3px; }
 .line-middle { top: 77px; }
 .line-bottom { top: 151px; }
-.bar-chart { position: absolute; inset: 0 0 0 0; display: grid; grid-template-columns: repeat(10,minmax(0,1fr)); align-items: end; gap: 8px; }
+.bar-chart { position: absolute; inset: 0 0 0 0; display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); align-items: end; gap: 8px; }
 .bar-column { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
 .bar-value { height: 16px; color: #8290b6; font-size: 8px; }
 .chart-bar { width: min(100%,26px); min-height: 0; border-radius: 4px 4px 1px 1px; background: #c9d3fa; transition: background .15s; }
