@@ -156,7 +156,6 @@ const buildMachineSummary = (machineId: string, dataset: InspectionDataset) => {
   return {
     ...base,
     records: rows.length,
-    failures: rows.filter((row) => String(row.values[36] || '').includes('불합격')).length,
     latest: latestRow ? String(latestRow.values[2]).replaceAll('-', '.') : base.latest,
     latestProduct: latestRow ? String(latestRow.values[10] || '—') : base.latestProduct,
     monthly,
@@ -165,7 +164,6 @@ const buildMachineSummary = (machineId: string, dataset: InspectionDataset) => {
       lot: String(row.values[9] || '—'),
       product: String(row.values[10] || '—'),
       weight: typeof row.values[14] === 'number' ? String(row.values[14]) : '—',
-      verdict: String(row.values[36] || '미판정'),
     })),
   }
 }
@@ -460,45 +458,42 @@ const machines = [
     id: '3',
     name: '초지 3호기',
     records: 739,
-    failures: 0,
     latest: '2026.10.07',
     latestProduct: '대한 2J 16.0',
     monthly: [59, 81, 63, 74, 51, 82, 121, 64, 73, 71],
     recent: [
-      { date: '10.07', lot: '261007B629', product: '대한 2J 16.0', weight: '15.39', verdict: '합격' },
-      { date: '10.07', lot: '261007B613', product: '대한 2J 16.0', weight: '16.04', verdict: '합격' },
-      { date: '10.07', lot: '261007B597', product: '대한 2J 16.0', weight: '15.66', verdict: '합격' },
-      { date: '10.07', lot: '261007B581', product: '대한 2J 16.0', weight: '15.84', verdict: '합격' },
+      { date: '10.07', lot: '261007B629', product: '대한 2J 16.0', weight: '15.39' },
+      { date: '10.07', lot: '261007B613', product: '대한 2J 16.0', weight: '16.04' },
+      { date: '10.07', lot: '261007B597', product: '대한 2J 16.0', weight: '15.66' },
+      { date: '10.07', lot: '261007B581', product: '대한 2J 16.0', weight: '15.84' },
     ],
   },
   {
     id: '4',
     name: '초지 4호기',
     records: 1643,
-    failures: 2,
     latest: '2026.09.30',
     latestProduct: 'K/T (2겹)',
     monthly: [228, 141, 193, 183, 211, 169, 164, 207, 147, 0],
     recent: [
-      { date: '09.30', lot: '260930C020', product: 'K/T (2겹)', weight: '21.56', verdict: '합격' },
-      { date: '09.30', lot: '260930C017', product: 'K/T (2겹)', weight: '21.25', verdict: '합격' },
-      { date: '09.30', lot: '260930C014', product: 'K/T (2겹)', weight: '샘플없음', verdict: '합격' },
-      { date: '09.30', lot: '260930C011', product: 'K/T (2겹)', weight: '22.15', verdict: '합격' },
+      { date: '09.30', lot: '260930C020', product: 'K/T (2겹)', weight: '21.56' },
+      { date: '09.30', lot: '260930C017', product: 'K/T (2겹)', weight: '21.25' },
+      { date: '09.30', lot: '260930C014', product: 'K/T (2겹)', weight: '샘플없음' },
+      { date: '09.30', lot: '260930C011', product: 'K/T (2겹)', weight: '22.15' },
     ],
   },
   {
     id: '5',
     name: '초지 5호기',
     records: 2158,
-    failures: 0,
     latest: '2026.10.07',
     latestProduct: '데코 (일반) 3P (초5)',
     monthly: [246, 228, 243, 239, 247, 238, 213, 242, 205, 57],
     recent: [
-      { date: '10.07', lot: '261007D018', product: '데코 (일반) 3P (초5)', weight: '15.15', verdict: '합격' },
-      { date: '10.07', lot: '261007D014', product: '데코 (일반) 3P (초5)', weight: '14.93', verdict: '합격' },
-      { date: '10.07', lot: '261007D010', product: '데코 (일반) 3P (초5)', weight: '15.08', verdict: '합격' },
-      { date: '10.07', lot: '261007D006', product: '데코 (일반) 3P (초5)', weight: '15.09', verdict: '합격' },
+      { date: '10.07', lot: '261007D018', product: '데코 (일반) 3P (초5)', weight: '15.15' },
+      { date: '10.07', lot: '261007D014', product: '데코 (일반) 3P (초5)', weight: '14.93' },
+      { date: '10.07', lot: '261007D010', product: '데코 (일반) 3P (초5)', weight: '15.08' },
+      { date: '10.07', lot: '261007D006', product: '데코 (일반) 3P (초5)', weight: '15.09' },
     ],
   },
 ]
@@ -526,7 +521,6 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | '
       {machines.map((machine) => (
         <a class={`nav-link ${activeId === machine.id ? 'active' : ''}`} href={`/machine/${machine.id}`}>
           <span class="nav-icon machine-icon">{machine.id}</span><span>{machine.name}</span>
-          {machine.failures > 0 ? <span class="nav-alert">{machine.failures}</span> : null}
         </a>
       ))}
       <button type="button" class="admin-entry-button" data-admin-entry aria-label="관리자 메뉴 열기">관리자</button>
@@ -542,7 +536,6 @@ app.get('/', async (c) => {
   const dataset = await getInspectionDataset(c.env.DB)
   const liveMachines = machines.map((machine) => buildMachineSummary(machine.id, dataset))
   const totalRecords = liveMachines.reduce((sum, machine) => sum + machine.records, 0)
-  const totalFailures = liveMachines.reduce((sum, machine) => sum + machine.failures, 0)
   const machineDates = dataset.rows.filter((row) => !row.auxiliaryOnly && ['초지3', '초지4', '초지5'].includes(String(row.values[1]))).map((row) => String(row.values[2])).filter((date) => isValidReportDate(date)).sort()
   const latestInspectionDate = machineDates.at(-1) || '2026-10-07'
   const firstInspectionDate = machineDates[0] || '2026-01-01'
@@ -562,16 +555,11 @@ app.get('/', async (c) => {
           </div>
           <div class="date-range"><span class="calendar-icon">▣</span>{firstInspectionDate.replaceAll('-', '.')} – {latestInspectionDate.replaceAll('-', '.')}</div>
         </section>
-        <section class="summary-grid" aria-label="전체 품질 요약">
+        <section class="summary-grid overview-summary-grid" aria-label="전체 품질 요약">
           <article class="summary-card">
             <div class="summary-label">전체 검사 기록</div>
             <div class="summary-value">{totalRecords.toLocaleString('ko-KR')}<span>건</span></div>
             <div class="summary-note"><span class="summary-icon blue">▤</span>초지 3·4·5호기 누적</div>
-          </article>
-          <article class="summary-card">
-            <div class="summary-label">불합격 기록</div>
-            <div class="summary-value">{totalFailures}<span>건</span></div>
-            <div class="summary-note"><span class="summary-icon coral">!</span>엑셀 판정값 기준</div>
           </article>
           <article class="summary-card">
             <div class="summary-label">관리 대상 설비</div>
@@ -589,9 +577,6 @@ app.get('/', async (c) => {
               <a class="machine-card" href={`/machine/${machine.id}`}>
                 <div class="machine-card-top">
                   <span class="machine-symbol">{machine.id}</span>
-                  <span class={`machine-state ${machine.failures ? 'has-issue' : ''}`}>
-                    <i></i>{machine.failures ? `불합격 ${machine.failures}건` : '특이사항 없음'}
-                  </span>
                 </div>
                 <h3>{machine.name}</h3>
                 <p class="machine-subtitle">초지 생산 품질 검사</p>
@@ -802,9 +787,9 @@ app.get('/machine/:id', async (c) => {
         <section class="panel records-panel">
           <div class="panel-heading records-heading"><div><h2>최근 검사 기록</h2><p>업로드된 검사성적서에서 가져온 샘플 기록</p></div><span class="data-badge">엑셀 데이터</span></div>
           <div class="table-scroll"><table>
-            <thead><tr><th>검사일</th><th>LOT 번호</th><th>품명</th><th>평량 (g/㎡)</th><th>판정</th></tr></thead>
+            <thead><tr><th>검사일</th><th>LOT 번호</th><th>품명</th><th>평량 (g/㎡)</th></tr></thead>
             <tbody>{machine.recent.map((record) => (
-              <tr><td>{record.date}</td><td class="lot-number">{record.lot}</td><td>{record.product}</td><td>{record.weight}</td><td><span class={`verdict ${record.verdict === '불합격' ? 'verdict-fail' : ''}`}>{record.verdict}</span></td></tr>
+              <tr><td>{record.date}</td><td class="lot-number">{record.lot}</td><td>{record.product}</td><td>{record.weight}</td></tr>
             ))}</tbody>
           </table></div>
           <p class="table-disclaimer">※ 이 화면은 업로드된 파일의 요약 시안입니다. 본 시스템의 데이터베이스와 실시간 연동된 상태는 아닙니다.</p>
