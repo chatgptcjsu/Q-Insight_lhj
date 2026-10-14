@@ -1,5 +1,4 @@
 (() => {
-  const FELT_DATA_URL = '/static/felt-operations.json'
   const ALIAS_KEY = 'q-insight-product-aliases-v1'
   const COLORS = ['#4268e8', '#43a486', '#d9805f', '#8a6cc4', '#3295aa', '#bf9b3b']
   const MEASURES = [
@@ -17,26 +16,10 @@
     { key: 'wetDissolve', label: '물풀링성', column: 31, unit: 'sec' },
     { key: 'airPerm', label: '투기도', column: 32, unit: 'cc/㎠/sec' },
   ]
-  const METRICS = [
-    { key: 'speed', label: '선속', unit: '' },
-    { key: 'basisWeight', label: '평량', unit: '' },
-    { key: 'sRoll', label: 'S/Roll', unit: 'KPa' },
-    { key: 'nipKnPerM', label: 'NIP', unit: 'KN/m' },
-    { key: 'blowerKpa', label: 'Turbo Blower 압력', unit: 'KPa' },
-    { key: 'blowerMeasure1', label: 'Turbo Blower 측정값 #1', unit: '' },
-    { key: 'blowerAmp', label: 'Turbo Blower AMP', unit: 'AMP' },
-    { key: 'feltKpa1', label: 'FELT 압력 #1', unit: 'KPa' },
-    { key: 'feltKpa2', label: 'FELT 압력 #2', unit: 'KPa' },
-    { key: 'highPressureShower', label: '고압샤워', unit: '' },
-    { key: 'hoodWet', label: 'HOOD 온도 wet', unit: '' },
-    { key: 'hoodDry', label: 'HOOD 온도 dry', unit: '' },
-    { key: 'steamBar', label: '스팀', unit: 'Bar' },
-  ]
   const ui = {
     tabs: [...document.querySelectorAll('[data-compare-view]')],
     panels: {
       quality: document.getElementById('quality-trend-panel'),
-      felt: document.getElementById('felt-trend-panel'),
       distribution: document.getElementById('compare-control-panel'),
       distributionChart: document.getElementById('compare-distribution-panel'),
     },
@@ -54,21 +37,8 @@
     qualitySubtitle: document.getElementById('trend-chart-subtitle'),
     qualityTotal: document.getElementById('trend-sample-total'),
     qualityLegend: document.getElementById('trend-legend'),
-    feltCycle: document.getElementById('felt-cycle-select'),
-    feltMetric: document.getElementById('felt-metric-select'),
-    feltStart: document.getElementById('felt-start-date'),
-    feltEnd: document.getElementById('felt-end-date'),
-    feltSyncQuality: document.getElementById('felt-sync-quality-period'),
-    feltStatus: document.getElementById('felt-trend-status'),
-    feltRun: document.getElementById('run-felt-trend'),
-    feltChart: document.getElementById('felt-chart'),
-    feltTitle: document.getElementById('felt-chart-title'),
-    feltSubtitle: document.getElementById('felt-chart-subtitle'),
-    feltCount: document.getElementById('felt-record-count'),
-    feltEvents: document.getElementById('felt-event-list'),
   }
   let inspectionDataset = null
-  let feltDataset = null
   let aliases = new Map()
   let sourceRenames = []
   let qualityTargets = []
@@ -85,10 +55,8 @@
   }
 
   function setView(view) {
-    const combined = view === 'combined'
     ui.tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.compareView === view))
-    ui.panels.quality.hidden = !combined && view !== 'quality'
-    ui.panels.felt.hidden = !combined && view !== 'felt'
+    ui.panels.quality.hidden = view !== 'quality'
     ui.panels.distribution.hidden = view !== 'distribution'
     ui.panels.distributionChart.hidden = view !== 'distribution'
   }
@@ -274,164 +242,9 @@
     ui.qualityChart.innerHTML = svg
   }
 
-  function loadFeltData() {
-    return fetch(FELT_DATA_URL).then((response) => {
-      if (!response.ok) throw new Error('FELT 관리 자료를 읽지 못했습니다.')
-      return response.json()
-    })
-  }
-
-  function fillFeltCycles() {
-    const options = [{ value: 'all', label: '모든 교체 주기' }, ...feltDataset.cycles.map((cycle) => ({
-      value: cycle.sheet,
-      label: `${cycle.installDate || '날짜 미상'} · ${cycle.feltNo || 'FELT 번호 미상'}${cycle.design ? ` · ${cycle.design}` : ''}`,
-    }))]
-    fillSelect(ui.feltCycle, options)
-    setFeltCycleRange()
-  }
-
-  function getFeltCycleBounds() {
-    const cycle = feltDataset.cycles.find((entry) => entry.sheet === ui.feltCycle.value)
-    const cycleRows = cycle ? feltDataset.rows.filter((row) => row.sheet === cycle.sheet) : feltDataset.rows
-    const dates = cycleRows.map((row) => row.date).sort()
-    return dates.length ? { min: dates[0], max: dates[dates.length - 1] } : { min: '', max: '' }
-  }
-
-  function setFeltCycleRange() {
-    const { min, max } = getFeltCycleBounds()
-    ui.feltStart.min = min
-    ui.feltStart.max = max
-    ui.feltEnd.min = min
-    ui.feltEnd.max = max
-    ui.feltStart.value = min
-    ui.feltEnd.value = max
-  }
-
-  function syncFeltDatesToQuality() {
-    const startMonth = ui.qualityStartMonth.value
-    const endMonth = ui.qualityEndMonth.value
-    if (!startMonth || !endMonth || startMonth > endMonth) return false
-    const bounds = getFeltCycleBounds()
-    if (!bounds.min || !bounds.max) return false
-    const endYear = Number(endMonth.slice(0, 4))
-    const endNumber = Number(endMonth.slice(5, 7))
-    const qualityStart = `${startMonth}-01`
-    const qualityEnd = new Date(Date.UTC(endYear, endNumber, 0)).toISOString().slice(0, 10)
-    const start = qualityStart > bounds.min ? qualityStart : bounds.min
-    const end = qualityEnd < bounds.max ? qualityEnd : bounds.max
-    if (start > end) {
-      ui.feltStart.value = ''
-      ui.feltEnd.value = ''
-      ui.feltStatus.textContent = '선택한 품질 월 기간과 FELT 주기의 기간이 겹치지 않습니다.'
-      ui.feltChart.innerHTML = '<div class="compare-empty-state">선택한 월 범위에 해당하는 FELT 운전 기록이 없습니다.</div>'
-      ui.feltCount.textContent = '겹치는 기간 없음'
-      renderFeltEvents([])
-      return false
-    }
-    ui.feltStart.value = start
-    ui.feltEnd.value = end
-    return true
-  }
-
-  function renderFeltEvents(rows) {
-    const events = rows.filter((row) => row.note || row.downtime).sort((left, right) => right.date.localeCompare(left.date))
-    if (!events.length) {
-      ui.feltEvents.innerHTML = '<div class="felt-event-empty">선택한 기간에 기록된 운휴·특기사항이 없습니다.</div>'
-      return
-    }
-    ui.feltEvents.innerHTML = `<h3>운휴·현장 특이사항</h3><ul>${events.map((row) => `<li><time>${escapeHtml(row.date)}</time><span class="felt-event-cycle">${escapeHtml(row.feltNo || row.sheet)}</span><span>${row.downtime ? `<strong>운휴</strong> ${escapeHtml(row.downtime)} ` : ''}${escapeHtml(row.note || '')}</span></li>`).join('')}</ul>`
-  }
-
-  function drawFeltChart() {
-    if (!feltDataset) return
-    const metric = METRICS.find((item) => item.key === ui.feltMetric.value)
-    if (!metric) return
-    const start = ui.feltStart.value
-    const end = ui.feltEnd.value
-    if (!start || !end) {
-      ui.feltStatus.textContent = '선택한 품질 월 기간과 FELT 주기의 기간이 겹치지 않습니다. 기간을 조정해 주세요.'
-      ui.feltChart.innerHTML = '<div class="compare-empty-state">선택한 조건에 해당하는 FELT 운전 기록이 없습니다.</div>'
-      ui.feltCount.textContent = '겹치는 기간 없음'
-      renderFeltEvents([])
-      return
-    }
-    if (start > end) {
-      ui.feltStatus.textContent = '시작일이 종료일보다 늦습니다.'
-      return
-    }
-    const cycleName = ui.feltCycle.value
-    const rows = feltDataset.rows.filter((row) => row.date >= start && row.date <= end && (cycleName === 'all' || row.sheet === cycleName))
-      .sort((left, right) => left.date.localeCompare(right.date))
-    const validRows = rows.filter((row) => typeof row[metric.key] === 'number' && Number.isFinite(row[metric.key]))
-    if (!validRows.length) {
-      ui.feltChart.innerHTML = '<div class="compare-empty-state">선택한 운전조건과 기간에 표시할 측정값이 없습니다.</div>'
-      ui.feltCount.textContent = '표본 없음'
-      ui.feltSubtitle.textContent = `${metric.label}${metric.unit ? ` · ${metric.unit}` : ''}`
-      renderFeltEvents(rows)
-      return
-    }
-    drawDailyFeltChart(validRows, metric, start, end, cycleName)
-    const cycle = feltDataset.cycles.find((item) => item.sheet === cycleName)
-    ui.feltTitle.textContent = `${metric.label} 일별 추이`
-    ui.feltSubtitle.textContent = `${cycle ? `${cycle.installDate} · FELT ${cycle.feltNo || cycle.sheet}` : '전체 교체 이력'} · ${start}–${end}${metric.unit ? ` · ${metric.unit}` : ''}`
-    ui.feltCount.textContent = `${validRows.length.toLocaleString('ko-KR')}일 측정`
-    ui.feltStatus.textContent = '각 점에 마우스를 올리면 날짜·측정값·FELT 번호를 확인할 수 있습니다. 날짜가 비면 선은 이어지지 않습니다.'
-    renderFeltEvents(rows)
-  }
-
-  function drawDailyFeltChart(rows, metric, start, end, cycleName) {
-    const width = Math.max(820, Math.min(1400, rows.length * 13 + 150))
-    const height = 390
-    const left = 74; const right = width - 26; const top = 30; const bottom = 305
-    const startTime = Date.parse(`${start}T00:00:00Z`)
-    const endTime = Date.parse(`${end}T00:00:00Z`)
-    const totalTime = Math.max(endTime - startTime, 86400000)
-    const xDate = (date) => left + ((Date.parse(`${date}T00:00:00Z`) - startTime) / totalTime) * (right - left)
-    const values = rows.map((row) => row[metric.key])
-    const min = Math.min(...values); const max = Math.max(...values)
-    const pad = min === max ? Math.max(Math.abs(max) * 0.06, 1) : (max - min) * 0.1
-    const low = min - pad; const high = max + pad
-    const y = (value) => bottom - ((value - low) / (high - low)) * (bottom - top)
-    const sortedRows = [...rows].sort((a, b) => a.date.localeCompare(b.date))
-    const rowByDate = new Map(sortedRows.map((row) => [row.date, row]))
-    const dailySamples = []
-    const sampleDate = new Date(`${start}T00:00:00Z`)
-    const finalDate = new Date(`${end}T00:00:00Z`)
-    while (sampleDate <= finalDate) {
-      const date = sampleDate.toISOString().slice(0, 10)
-      const row = rowByDate.get(date)
-      dailySamples.push({ date, row, value: row ? row[metric.key] : null })
-      sampleDate.setUTCDate(sampleDate.getUTCDate() + 1)
-    }
-    let path = ''
-    let connected = false
-    dailySamples.forEach((sample) => {
-      if (sample.value === null || sample.value === undefined) { connected = false; return }
-      path += `${connected ? 'L' : 'M'} ${xDate(sample.date)} ${y(sample.value)} `
-      connected = true
-    })
-    const ticks = Array.from({ length: 5 }, (_, index) => high - (high - low) * index / 4)
-    const grid = ticks.map((tick) => `<g class="trend-grid"><line x1="${left}" x2="${right}" y1="${y(tick)}" y2="${y(tick)}"/><text x="${left - 10}" y="${y(tick) + 4}" text-anchor="end">${escapeHtml(formatNumber(tick))}</text></g>`).join('')
-    const monthTicks = [start]
-    const startMonth = new Date(`${start}T00:00:00Z`)
-    const tick = new Date(Date.UTC(startMonth.getUTCFullYear(), startMonth.getUTCMonth() + 1, 1))
-    while (tick.getTime() <= endTime) {
-      monthTicks.push(tick.toISOString().slice(0, 10))
-      tick.setUTCMonth(tick.getUTCMonth() + 1)
-    }
-    const xGrid = monthTicks.map((date) => `<g class="trend-x-grid"><line x1="${xDate(date)}" x2="${xDate(date)}" y1="${top}" y2="${bottom}"/><text x="${xDate(date)}" y="${bottom + 22}" text-anchor="middle">${Number(date.slice(5, 7))}월</text></g>`).join('')
-    const cycleLines = feltDataset.cycles.filter((cycle) => cycle.installDate >= start && cycle.installDate <= end && (cycleName === 'all' || cycle.sheet === cycleName))
-      .map((cycle) => `<g class="felt-cycle-marker"><line x1="${xDate(cycle.installDate)}" x2="${xDate(cycle.installDate)}" y1="${top}" y2="${bottom}"/><text x="${xDate(cycle.installDate) + 4}" y="${top + 11}" transform="rotate(90 ${xDate(cycle.installDate) + 4} ${top + 11})">교체 ${escapeHtml(cycle.feltNo || '')}</text></g>`).join('')
-    const eventRows = feltDataset.rows.filter((row) => row.date >= start && row.date <= end && (cycleName === 'all' || row.sheet === cycleName) && (row.note || row.downtime))
-    const eventMarkers = eventRows.map((row) => `<circle class="felt-event-marker" cx="${xDate(row.date)}" cy="${bottom - 5}" r="4"><title>${escapeHtml(row.date)} · ${escapeHtml([row.downtime, row.note].filter(Boolean).join(' '))}</title></circle>`).join('')
-    const points = dailySamples.filter((sample) => sample.row && typeof sample.value === 'number').map((sample) => `<circle class="trend-point felt-point" cx="${xDate(sample.date)}" cy="${y(sample.value)}" r="3.4"><title>${escapeHtml(sample.date)} · ${escapeHtml(metric.label)} ${formatNumber(sample.value)}${metric.unit ? ` ${escapeHtml(metric.unit)}` : ''} · FELT ${escapeHtml(sample.row.feltNo || sample.row.sheet)}</title></circle>`).join('')
-    const svg = `<svg class="compare-svg trend-svg felt-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="FELT ${escapeHtml(metric.label)} 일별 추이">${grid}${xGrid}${cycleLines}<line class="compare-axis" x1="${left}" x2="${right}" y1="${bottom}" y2="${bottom}"/><path class="trend-line felt-line" d="${path}"/>${points}${eventMarkers}</svg><div class="felt-marker-legend"><span><i class="felt-cycle-swatch"></i>FELT 교체</span><span><i class="felt-event-swatch"></i>운휴·특기사항 (마커에 마우스를 올려 확인)</span></div>`
-    ui.feltChart.innerHTML = svg
-  }
-
   async function start() {
     ui.tabs.forEach((tab) => tab.addEventListener('click', () => setView(tab.dataset.compareView)))
-    setView('combined')
+    setView('quality')
     try {
       inspectionDataset = await window.qInsightLoadInspectionDataset()
       readAliases()
@@ -446,34 +259,11 @@
       ui.qualityRun.addEventListener('click', drawQualityTrend)
       ui.qualityStatistic.addEventListener('change', () => { if (ui.qualityTargets.querySelector('input:checked')) drawQualityTrend() })
       ui.qualityStartMonth.addEventListener('change', () => {
-        if (ui.feltSyncQuality.checked && feltDataset) { syncFeltDatesToQuality(); drawFeltChart() }
         if (ui.qualityTargets.querySelector('input:checked')) drawQualityTrend()
       })
       ui.qualityEndMonth.addEventListener('change', () => {
-        if (ui.feltSyncQuality.checked && feltDataset) { syncFeltDatesToQuality(); drawFeltChart() }
         if (ui.qualityTargets.querySelector('input:checked')) drawQualityTrend()
       })
-      try {
-        feltDataset = await loadFeltData()
-        fillFeltCycles()
-        fillSelect(ui.feltMetric, feltDataset.metrics.map((metric) => ({ value: metric.key, label: `${metric.label}${metric.unit ? ` (${metric.unit})` : ''}` })))
-        ui.feltMetric.value = 'feltKpa1'
-      syncFeltDatesToQuality()
-      ui.feltCycle.addEventListener('change', () => {
-        setFeltCycleRange()
-        if (ui.feltSyncQuality.checked) syncFeltDatesToQuality()
-        drawFeltChart()
-      })
-      ui.feltMetric.addEventListener('change', drawFeltChart)
-      ui.feltStart.addEventListener('change', () => { ui.feltSyncQuality.checked = false; drawFeltChart() })
-      ui.feltEnd.addEventListener('change', () => { ui.feltSyncQuality.checked = false; drawFeltChart() })
-      ui.feltSyncQuality.addEventListener('change', () => { if (ui.feltSyncQuality.checked) syncFeltDatesToQuality(); drawFeltChart() })
-        ui.feltRun.addEventListener('click', drawFeltChart)
-        drawFeltChart()
-      } catch (error) {
-        ui.feltStatus.textContent = error instanceof Error ? error.message : 'FELT 운영 데이터를 읽지 못했습니다.'
-        ui.feltChart.innerHTML = '<div class="compare-empty-state">FELT 운영 데이터를 읽지 못했습니다.</div>'
-      }
     } catch (error) {
       ui.qualityStatus.textContent = error instanceof Error ? error.message : '초지345 데이터를 읽지 못했습니다.'
       ui.qualityTargets.innerHTML = '<div class="compare-empty-state">원본 검사 데이터를 읽지 못했습니다.</div>'

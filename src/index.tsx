@@ -312,6 +312,39 @@ app.post('/api/admin/logout', async (c) => {
   return c.json({ success: true })
 })
 
+type ProcessChecklistReading = { item: string; hour: number; slot: number; shift: string; value: number | string; sourceRow: number }
+type ProcessChecklistPayload = { machine?: string; checklistDate?: string; sourceName?: string; rawText?: string; readings?: ProcessChecklistReading[] }
+
+app.get('/api/process-checklists', async (c) => {
+  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const result = await c.env.DB.prepare('SELECT machine, checklist_date, source_name, readings_json, item_count, imported_at FROM process_checklists ORDER BY checklist_date DESC, machine').all<{ machine: string; checklist_date: string; source_name: string; readings_json: string; item_count: number; imported_at: string }>()
+  const records = result.results.map((row) => ({ machine: row.machine, checklistDate: row.checklist_date, sourceName: row.source_name, readings: JSON.parse(row.readings_json) as ProcessChecklistReading[], itemCount: row.item_count, importedAt: row.imported_at }))
+  c.header('Cache-Control', 'no-store')
+  return c.json({ current: records, history: records })
+})
+
+app.post('/api/process-checklists', async (c) => {
+  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const body = await c.req.json<ProcessChecklistPayload>().catch(() => ({} as ProcessChecklistPayload))
+  const machine = String(body.machine || '')
+  const checklistDate = String(body.checklistDate || '')
+  const rawText = String(body.rawText || '')
+  const readings = Array.isArray(body.readings) ? body.readings : []
+  if (!['초지3', '초지4', '초지5'].includes(machine)) return c.json({ error: '초지 3·4·5호기 중 하나를 선택해 주세요.' }, 400)
+  if (!isValidReportDate(checklistDate)) return c.json({ error: '체크리스트 날짜가 올바르지 않습니다.' }, 400)
+  if (!rawText || rawText.length > 60000 || readings.length > 600) return c.json({ error: '붙여넣기 데이터 크기를 확인해 주세요.' }, 413)
+  const safeReadings = readings.filter((reading) => reading && typeof reading.item === 'string' && reading.item.length <= 240 && Number.isInteger(reading.hour) && reading.hour >= 0 && reading.hour <= 23 && Number.isInteger(reading.slot) && reading.slot >= 0 && reading.slot < 12 && (typeof reading.value === 'number' && Number.isFinite(reading.value) || typeof reading.value === 'string' && reading.value.length <= 100))
+  if (!safeReadings.length) return c.json({ error: '저장할 시간별 측정값을 찾지 못했습니다.' }, 400)
+  const expectedSource = machine === '초지3' ? '10 월' : machine === '초지4' ? '10월 초지 공정일지' : '10월 공정체크리스트'
+  const sourceName = expectedSource
+  const importedAt = new Date().toISOString()
+  const id = crypto.randomUUID()
+  const exists = await c.env.DB.prepare('SELECT id FROM process_checklists WHERE machine = ? AND checklist_date = ?').bind(machine, checklistDate).first<{ id: string }>()
+  await c.env.DB.prepare('INSERT INTO process_checklists (id, machine, checklist_date, source_name, raw_text, readings_json, item_count, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine, checklist_date) DO UPDATE SET id = excluded.id, source_name = excluded.source_name, raw_text = excluded.raw_text, readings_json = excluded.readings_json, item_count = excluded.item_count, imported_at = excluded.imported_at')
+    .bind(id, machine, checklistDate, sourceName, rawText, JSON.stringify(safeReadings), safeReadings.length, importedAt).run()
+  return c.json({ success: true, updated: Boolean(exists), machine, checklistDate, itemCount: safeReadings.length })
+})
+
 app.get('/api/inspection-records', async (c) => {
   const result = await c.env.DB.prepare('SELECT record_key, excel_row, values_json FROM inspection_records ORDER BY inspection_date DESC, excel_row DESC').all<{ record_key: string; excel_row: number; values_json: string }>()
   c.header('Cache-Control', 'no-store')
@@ -498,7 +531,7 @@ const machines = [
   },
 ]
 
-const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | 'reports') => (
+const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | 'reports' | 'checklists') => (
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="품질관리 홈">
       <span class="brand-mark">Q</span>
@@ -513,7 +546,10 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | '
         <span class="nav-icon overview-icon">▤</span><span>초지345 원본</span>
       </a>
       <a class={`nav-link ${activePage === 'compare' ? 'active' : ''}`} href="/compare">
-        <span class="nav-icon overview-icon">↗</span><span>품질·FELT 추이</span>
+        <span class="nav-icon overview-icon">↗</span><span>품질 추이</span>
+      </a>
+      <a class={`nav-link ${activePage === 'checklists' ? 'active' : ''}`} href="/process-checklists">
+        <span class="nav-icon overview-icon">⌁</span><span>공정 체크리스트</span>
       </a>
       <a class={`nav-link ${activePage === 'reports' ? 'active' : ''}`} href="/reports">
         <span class="nav-icon overview-icon">⇧</span><span>검사성적서 첨부</span>
@@ -931,17 +967,57 @@ app.get('/reports', async (c) => {
   )
 })
 
+app.get('/process-checklists', async (c) => {
+  if (!await hasAdminAccess(c)) return c.redirect('/?admin=1&next=%2Fprocess-checklists')
+  return c.render(
+    <div class="app-shell">
+      {navigation(undefined, 'checklists')}
+      <main class="main-content data-admin-content checklist-content">
+        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>공정 체크리스트</strong></div><div class="source-chip"><span class="source-dot"></span>수기 붙여넣기 · 초지 3·4·5호기</div></header>
+        <section class="page-heading"><div><p class="eyebrow">MACHINE PROCESS CHECKLISTS</p><h1>공정 체크리스트 입력·추이</h1><p class="page-description">엑셀의 날짜별 표를 복사해 붙여 넣으면 시간대별 공정 측정값을 정리해 저장합니다.</p></div></section>
+        <div class="checklist-info-strip"><strong>FELT 추이 데이터는 사용하지 않습니다.</strong><span>이 화면은 예전에 제공된 FELT 자료에서 파생한 데이터를 불러오지 않습니다. 날짜별 체크리스트 원본은 그대로 보존하고, 숫자 측정값만 추이 그래프에 반영합니다.</span></div>
+        <section class="panel checklist-entry-panel">
+          <div class="inspection-panel-heading"><div><h2>체크리스트 붙여넣기</h2><p>엑셀에서 해당 날짜 시트의 표 범위를 선택해 복사한 뒤 아래에 붙여 넣으세요. 날짜·시간·항목을 자동으로 읽고 저장 전에 미리 확인합니다.</p></div><span class="data-badge">관리자 전용</span></div>
+          <div class="checklist-template-grid">
+            <label><span>초지기</span><select id="checklist-machine"><option value="초지5">초지 5호기 · 10월 공정체크리스트</option><option value="초지3">초지 3호기 · 10 월</option><option value="초지4">초지 4호기 · 10월 초지 공정일지</option></select></label>
+            <label><span>체크리스트 날짜</span><input id="checklist-date" type="date" /></label>
+          </div>
+          <p class="checklist-template-note"><strong>양식별 기본 복사 범위</strong> · 초지3 A1:U44 · 초지4 A1:U43 · 초지5 A1:U42. 실제로는 표 전체를 선택해 복사하면 됩니다.</p>
+          <label class="checklist-paste-label" for="checklist-paste"><span>엑셀 셀 붙여넣기</span><textarea id="checklist-paste" spellCheck={false} placeholder="엑셀 범위를 복사한 다음 여기에 붙여 넣으세요."></textarea></label>
+          <div class="checklist-form-actions"><button id="checklist-parse" type="button" class="quiet-button">미리보기</button><button id="checklist-save" type="button" class="primary-button" disabled>체크리스트 저장</button></div>
+          <p id="checklist-status" class="checklist-status" role="status" aria-live="polite">호기별 양식과 날짜를 확인하고 미리보기를 실행하세요.</p>
+          <div id="checklist-preview" class="checklist-preview" hidden></div>
+        </section>
+        <section class="panel checklist-trend-panel">
+          <div class="inspection-panel-heading"><div><h2>시간대별 공정 추이</h2><p>저장된 체크리스트의 숫자 측정값을 날짜·시간 순으로 표시합니다. 문자 항목은 원본/이력에만 남기고 그래프에서 제외합니다.</p></div><span id="checklist-chart-summary" class="data-badge">—</span></div>
+          <div class="checklist-chart-controls">
+            <label><span>호기</span><select id="checklist-chart-machine"><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5" selected>초지5</option></select></label>
+            <label class="checklist-measure-control"><span>측정 항목</span><select id="checklist-chart-metric"></select></label>
+            <label><span>시작일</span><input id="checklist-start-date" type="date" /></label>
+            <label><span>종료일</span><input id="checklist-end-date" type="date" /></label>
+          </div>
+          <div id="checklist-chart" class="compare-chart-area"><div class="compare-empty-state">저장된 체크리스트 숫자 기록이 없습니다.</div></div>
+        </section>
+        <section class="panel checklist-history-panel">
+          <div class="inspection-panel-heading"><div><h2>저장된 날짜별 체크리스트</h2><p>같은 호기·날짜를 다시 저장하면 최신 붙여넣기 내용으로 교체됩니다.</p></div></div>
+          <div class="report-table-wrap"><table class="report-table"><thead><tr><th>날짜</th><th>호기</th><th>원본 파일명</th><th>측정값</th><th>최근 저장</th></tr></thead><tbody id="checklist-history"><tr><td colspan={5} class="inspection-loading">체크리스트를 불러오는 중입니다.</td></tr></tbody></table></div>
+        </section>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/compare">검사성적서 품질 추이</a></span></footer>
+      </main>
+      <script src="/static/process-checklists.js" defer></script>
+    </div>
+  )
+})
+
 app.get('/compare', (c) => {
   return c.render(
     <div class="app-shell">
       {navigation(undefined, 'compare')}
       <main class="main-content data-admin-content">
-          <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>품질·FELT 추이</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 검사 데이터 · 초지5 FELT 운영 기록</div></header>
-        <section class="page-heading"><div><p class="eyebrow">QUALITY & FELT TRENDS</p><h1>품질·FELT 추이 비교</h1><p class="page-description">품목별 월 추이와 FELT 교체 주기별 일별 운전조건을 같은 화면에서 살펴봅니다.</p></div></section>
+          <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>검사성적서 품질 추이</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 검사 데이터</div></header>
+        <section class="page-heading"><div><p class="eyebrow">INSPECTION QUALITY TRENDS</p><h1>검사성적서 품질 추이</h1><p class="page-description">초지345 검사 데이터의 품목별 월 추이와 분포를 비교합니다.</p></div></section>
         <nav class="compare-view-tabs" aria-label="비교 보기 선택">
-          <button type="button" class="compare-view-tab active" data-compare-view="combined">품질·FELT 함께 보기</button>
-          <button type="button" class="compare-view-tab" data-compare-view="quality">품목 품질 추이</button>
-          <button type="button" class="compare-view-tab" data-compare-view="felt">FELT 일별 운전조건</button>
+          <button type="button" class="compare-view-tab active" data-compare-view="quality">품목 품질 추이</button>
           <button type="button" class="compare-view-tab" data-compare-view="distribution">분포 비교</button>
         </nav>
         <section id="quality-trend-panel" class="panel compare-control-panel compare-view-panel">
@@ -959,23 +1035,6 @@ app.get('/compare', (c) => {
             <div class="inspection-panel-heading"><div><h2 id="trend-chart-title">월별 품질 추이</h2><p id="trend-chart-subtitle">품목을 선택하고 비교를 실행하세요.</p></div><span id="trend-sample-total" class="data-badge">—</span></div>
             <div id="trend-chart" class="compare-chart-area"><div class="compare-empty-state">검사항목과 품목을 선택한 뒤 ‘월별 추이 보기’를 누르세요.</div></div>
             <div id="trend-legend" class="trend-legend"></div>
-          </div>
-        </section>
-        <section id="felt-trend-panel" class="panel compare-control-panel compare-view-panel">
-          <div class="felt-source-notice"><strong>데이터 안내</strong><span>‘1-2’ 시트는 기록 연도 수정 전까지 제외했습니다. 측정값이 없는 예약 날짜는 차트에 표시하지 않습니다.</span></div>
-          <div class="compare-filter-grid trend-filter-grid felt-filter-grid">
-            <label><span>FELT 주기</span><select id="felt-cycle-select"></select></label>
-            <label><span>운전조건</span><select id="felt-metric-select"></select></label>
-            <label><span>시작일</span><input id="felt-start-date" type="date" /></label>
-            <label><span>종료일</span><input id="felt-end-date" type="date" /></label>
-            <label class="felt-sync-option"><input id="felt-sync-quality-period" type="checkbox" checked /><span>품질 월 기간에 맞춤</span></label>
-          </div>
-          <div class="compare-actions"><p id="felt-trend-status" role="status">일별 측정값과 FELT 교체일을 함께 표시합니다.</p><button type="button" id="run-felt-trend" class="primary-button">일별 추이 보기</button></div>
-          <div class="compare-trend-chart-panel">
-            <div class="inspection-panel-heading"><div><h2 id="felt-chart-title">FELT 일별 운전조건</h2><p id="felt-chart-subtitle">운전조건을 선택하고 추이를 확인하세요.</p></div><span id="felt-record-count" class="data-badge">—</span></div>
-            <div id="felt-chart" class="compare-chart-area"><div class="compare-empty-state">조건을 선택한 뒤 ‘일별 추이 보기’를 누르세요.</div></div>
-            <div id="felt-event-list" class="felt-event-list"></div>
-            <div class="felt-chart-footnote">빈 날짜는 선으로 연결하지 않고 공백으로 표시합니다. FELT 교체 시점은 세로선으로, 운휴·현장 메모는 아래 이력으로 확인합니다. 엑셀 원본에 단위가 없는 항목은 수치만 표시합니다.</div>
           </div>
         </section>
         <section id="compare-control-panel" class="panel compare-control-panel compare-view-panel" hidden>
@@ -996,7 +1055,7 @@ app.get('/compare', (c) => {
           <div class="boxplot-legend compare-legend"><span><i class="legend-box"></i>25–75 백분위</span><span><i class="legend-median"></i>중앙값</span><span><i class="legend-whisker"></i>수염</span><span><i class="legend-outlier"></i>이상치</span></div>
             <p class="table-disclaimer">분포 비교는 선택한 기간의 검사값을 합쳐 품목별 분포를 보여줍니다. 품명 별칭은 표준 품명으로 묶습니다.</p>
         </section>
-        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/inspection">초지345 원본 데이터</a></span></footer>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/inspection">초지345 원본 데이터</a> · <a href="/process-checklists">공정 체크리스트</a></span></footer>
       </main>
           <script src="/static/compare.js" defer></script>
           <script src="/static/compare-trends.js" defer></script>

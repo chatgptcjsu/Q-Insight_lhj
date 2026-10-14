@@ -487,3 +487,33 @@ td:nth-child(3) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .report-import-warning { color: #a57931; font-weight: 600; }
 .report-protected-label { color: #7180a5; font-size: 8px; white-space: nowrap; }
 @media (max-width: 760px) { .report-upload-panel, .report-history-panel { padding: 13px 12px; } .report-upload-form { grid-template-columns: 1fr; } .report-note-field { grid-column: auto; } .report-upload-form .primary-button { width: 100%; } .report-info-strip { padding: 11px; } .report-info-strip p { font-size: 9px; } .report-table { min-width: 900px; } }
+.checklist-entry-panel, .checklist-trend-panel, .checklist-history-panel { margin-top: 14px; padding: 18px; }
+.checklist-info-strip { display: flex; flex-wrap: wrap; gap: 7px 12px; padding: 12px 14px; border: 1px solid #e6eaf5; border-radius: 9px; background: #f4f6fc; color: #758198; font-size: 10px; line-height: 1.65; }
+.checklist-info-strip strong { color: #56688f; }
+.checklist-template-grid, .checklist-chart-controls { display: grid; grid-template-columns: repeat(4,minmax(130px,1fr)); gap: 11px; margin-top: 16px; }
+.checklist-template-grid label, .checklist-chart-controls label, .checklist-paste-label { display: grid; min-width: 0; gap: 6px; color: #78849a; font-size: 9px; }
+.checklist-template-grid input, .checklist-template-grid select, .checklist-chart-controls input, .checklist-chart-controls select { width: 100%; min-width: 0; height: 36px; padding: 0 9px; border: 1px solid #e2e7ef; border-radius: 7px; background: #fff; color: #34415a; font: inherit; font-size: 10px; }
+.checklist-template-note { margin: 11px 0; color: #8994a7; font-size: 9px; line-height: 1.6; }
+.checklist-template-note strong { color: #65728b; }
+.checklist-paste-label textarea { width: 100%; min-height: 260px; padding: 12px; resize: vertical; border: 1px solid #dfe5ee; border-radius: 8px; background: #fcfdff; color: #34415a; font: 10px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; overflow: auto; }
+.checklist-paste-label textarea:focus { border-color: #9eafea; outline: 0; box-shadow: 0 0 0 3px #edf1ff; }
+.checklist-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 11px; }
+.checklist-form-actions .primary-button:disabled { opacity: .48; cursor: not-allowed; }
+.checklist-status { min-height: 18px; margin: 10px 0 0; color: #8792a5; font-size: 9px; line-height: 1.6; }
+.checklist-status.success { color: #348b68; }
+.checklist-status.error { color: #bd5e4e; }
+.checklist-preview { margin-top: 12px; padding: 13px; border: 1px solid #dce6f8; border-radius: 8px; background: #f7f9ff; color: #5e6f8e; font-size: 9px; line-height: 1.6; }
+.checklist-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 9px; color: #425578; }
+.checklist-preview p { margin: 7px 0; }
+.checklist-preview ul { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px 14px; margin: 9px 0 0; padding: 0; list-style: none; }
+.checklist-preview li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid #e9edf5; }
+.checklist-preview li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.checklist-preview li strong, .checklist-preview small { color: #8994a7; font-size: 8px; white-space: nowrap; }
+.checklist-chart-controls { grid-template-columns: minmax(125px,.7fr) minmax(240px,2fr) repeat(2,minmax(135px,.8fr)); }
+.checklist-chart-controls .checklist-measure-control { min-width: 0; }
+.checklist-svg { min-height: 280px; }
+.checklist-line { stroke: #4268e8; stroke-width: 2.3; }
+.checklist-point { fill: #4268e8; stroke: #fff; stroke-width: 1.5; }
+.checklist-history-panel .report-table { min-width: 650px; }
+@media (max-width: 900px) { .checklist-template-grid, .checklist-chart-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 760px) { .checklist-entry-panel, .checklist-trend-panel, .checklist-history-panel { padding: 13px 12px; } .checklist-template-grid, .checklist-chart-controls { grid-template-columns: 1fr 1fr; gap: 8px; } .checklist-paste-label textarea { min-height: 220px; } .checklist-form-actions { flex-direction: column-reverse; } .checklist-form-actions button { width: 100%; } .checklist-preview ul { grid-template-columns: 1fr; } }

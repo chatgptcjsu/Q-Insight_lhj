@@ -11,7 +11,7 @@
   const isProductPage = location.pathname === '/products'
   let mode = 'login'
   let redirectToProducts = false
-  const postLoginDestination = () => new URLSearchParams(location.search).get('next') === '/reports' ? '/reports' : '/products'
+  const postLoginDestination = () => ['/reports', '/process-checklists'].includes(new URLSearchParams(location.search).get('next')) ? new URLSearchParams(location.search).get('next') : '/products'
 
   function setStatus(message, kind = '') {
     status.textContent = message
