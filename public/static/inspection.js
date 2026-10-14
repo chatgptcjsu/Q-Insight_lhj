@@ -2,6 +2,7 @@
   const ACK_KEY = 'q-insight-inspection-alerts-reviewed-v1'
   const PRODUCT_SETTINGS_KEY = 'q-insight-product-aliases-v1'
   const QUALITY_COLUMNS = [7, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 38, 39, 40, 41]
+  const HIDDEN_COLUMN_INDEXES = new Set([36])
   const MIN_GROUP_SIZE = 12
   const elements = {
     recordCount: document.getElementById('inspection-record-count'),
@@ -11,7 +12,6 @@
     machine: document.getElementById('filter-machine'),
     month: document.getElementById('filter-month'),
     product: document.getElementById('filter-product'),
-    verdict: document.getElementById('filter-verdict'),
     rowType: document.getElementById('filter-row-type'),
     query: document.getElementById('filter-query'),
     suspiciousOnly: document.getElementById('filter-suspicious-only'),
@@ -159,7 +159,7 @@
 
   function renderTableHeader() {
     const headers = state.dataset.headers
-    elements.tableHead.innerHTML = `<tr><th class="excel-row-head">엑셀 행</th>${headers.map((column, index) => `<th class="source-column source-column-${index}" title="${escapeHtml(column.label)}">${escapeHtml(column.label)}</th>`).join('')}</tr>`
+    elements.tableHead.innerHTML = `<tr><th class="excel-row-head">엑셀 행</th>${headers.filter((column) => !HIDDEN_COLUMN_INDEXES.has(column.index)).map((column) => `<th class="source-column source-column-${column.index}" title="${escapeHtml(column.label)}">${escapeHtml(column.label)}</th>`).join('')}</tr>`
   }
 
   function getVisibleAlerts() {
@@ -199,7 +199,6 @@
       machine: elements.machine.value,
       month: elements.month.value,
       product: elements.product.value,
-      verdict: elements.verdict.value,
       rowType: elements.rowType.value,
       query: elements.query.value.trim().toLocaleLowerCase('ko-KR'),
       suspiciousOnly: elements.suspiciousOnly.checked,
@@ -212,9 +211,8 @@
     if (filters.machine && rowField(row, 1) !== filters.machine) return false
     if (filters.month && rowField(row, 0) !== filters.month) return false
     if (filters.product && rowField(row, 10) !== filters.product) return false
-    if (filters.verdict && rowField(row, 36) !== filters.verdict) return false
     if (filters.query) {
-      const searchable = row.values.map((value) => String(value ?? '')).join(' ').toLocaleLowerCase('ko-KR')
+      const searchable = row.values.filter((_, index) => !HIDDEN_COLUMN_INDEXES.has(index)).map((value) => String(value ?? '')).join(' ').toLocaleLowerCase('ko-KR')
       if (!searchable.includes(filters.query)) return false
     }
     if (filters.suspiciousOnly) {
@@ -241,12 +239,13 @@
     })
 
     if (!pageRows.length) {
-      elements.tableBody.innerHTML = `<tr><td class="inspection-empty-row" colspan="${state.dataset.headers.length + 1}">조건에 맞는 원본 행이 없습니다.</td></tr>`
+      elements.tableBody.innerHTML = `<tr><td class="inspection-empty-row" colspan="${state.dataset.headers.length - HIDDEN_COLUMN_INDEXES.size + 1}">조건에 맞는 원본 행이 없습니다.</td></tr>`
     } else {
       elements.tableBody.innerHTML = pageRows.map((row) => {
         const cellAlerts = alertsByRow.get(row.id) || new Map()
         const auxiliaryClass = row.auxiliaryOnly ? 'auxiliary-row' : ''
         const cells = row.values.map((rawValue, index) => {
+          if (HIDDEN_COLUMN_INDEXES.has(index)) return ''
           const value = index === 10 ? rowField(row, index) : rawValue
           const alert = cellAlerts.get(index)
           const classNames = ['source-cell', `source-column-${index}`]
@@ -288,7 +287,6 @@
     elements.machine.value = ''
     elements.month.value = ''
     elements.product.value = ''
-    elements.verdict.value = ''
     elements.rowType.value = 'inspection'
     elements.query.value = ''
     elements.suspiciousOnly.checked = false
@@ -298,7 +296,7 @@
   }
 
   function bindEvents() {
-    ;[elements.machine, elements.month, elements.product, elements.verdict, elements.rowType, elements.pageSize].forEach((element) => {
+    ;[elements.machine, elements.month, elements.product, elements.rowType, elements.pageSize].forEach((element) => {
       element.addEventListener('change', () => { state.page = 1; renderTable() })
     })
     elements.query.addEventListener('input', () => { state.page = 1; renderTable() })
@@ -326,12 +324,11 @@
       state.dataset = await window.qInsightLoadInspectionDataset()
       appendOptions(elements.machine, state.dataset.rows.map((row) => row.values[1]), '전체 호기')
       appendOptions(elements.product, state.dataset.rows.filter((row) => !row.auxiliaryOnly).map((row) => rowField(row, 10)), '전체 품명')
-      appendOptions(elements.verdict, state.dataset.rows.filter((row) => !row.auxiliaryOnly).map((row) => row.values[36]), '전체 판정')
       appendOptions(elements.month, state.dataset.rows.map((row) => row.values[0]), '전체 월', (left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10))
       renderTableHeader()
       findSuspiciousValues()
       elements.recordCount.textContent = state.dataset.recordCount.toLocaleString('ko-KR')
-      elements.columnCount.textContent = state.dataset.headers.length.toLocaleString('ko-KR')
+      elements.columnCount.textContent = (state.dataset.headers.length - HIDDEN_COLUMN_INDEXES.size).toLocaleString('ko-KR')
       bindEvents()
       refresh()
     } catch (error) {
