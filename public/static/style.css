@@ -517,3 +517,39 @@ td:nth-child(3) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .checklist-history-panel .report-table { min-width: 650px; }
 @media (max-width: 900px) { .checklist-template-grid, .checklist-chart-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 760px) { .checklist-entry-panel, .checklist-trend-panel, .checklist-history-panel { padding: 13px 12px; } .checklist-template-grid, .checklist-chart-controls { grid-template-columns: 1fr 1fr; gap: 8px; } .checklist-paste-label textarea { min-height: 220px; } .checklist-form-actions { flex-direction: column-reverse; } .checklist-form-actions button { width: 100%; } .checklist-preview ul { grid-template-columns: 1fr; } }
+.checklist-upload-grid { display: grid; grid-template-columns: minmax(110px,.65fr) minmax(150px,.8fr) minmax(260px,2fr) auto; align-items: end; gap: 11px; margin-top: 16px; }
+.checklist-upload-grid label { display: grid; min-width: 0; gap: 6px; color: #78849a; font-size: 9px; }
+.checklist-upload-grid select, .checklist-upload-grid input { width: 100%; min-width: 0; height: 38px; padding: 0 9px; border: 1px solid #e2e7ef; border-radius: 7px; background: #fff; color: #34415a; font: inherit; font-size: 10px; }
+.checklist-upload-grid input[type=file] { padding: 8px; }
+.checklist-analysis-controls { display: grid; grid-template-columns: minmax(110px,.65fr) minmax(190px,1.5fr) minmax(135px,1fr) minmax(135px,1fr) repeat(2,minmax(135px,.8fr)); gap: 9px; margin-top: 16px; }
+.checklist-analysis-controls label { display: grid; min-width: 0; gap: 5px; color: #78849a; font-size: 9px; }
+.checklist-analysis-controls select, .checklist-analysis-controls input { width: 100%; min-width: 0; height: 35px; padding: 0 8px; border: 1px solid #e2e7ef; border-radius: 7px; background: #fff; color: #34415a; font: inherit; font-size: 9px; }
+.checklist-preview-counts { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.checklist-preview-counts span { padding: 5px 8px; border: 1px solid #e5eaf2; border-radius: 6px; background: #fff; color: #8390a5; font-size: 8px; }
+.checklist-preview-counts b { margin-left: 4px; color: #415578; font-size: 9px; }
+.checklist-relationship-summary { display: flex; align-items: center; gap: 14px; margin-top: 13px; padding: 11px 13px; border: 1px solid #edf0f5; border-radius: 8px; background: #fafbfe; }
+.checklist-relationship-summary div { flex: 0 0 auto; text-align: center; }
+.checklist-relationship-summary span { display: block; color: #8792a5; font-size: 8px; }
+.checklist-relationship-summary strong { display: block; margin-top: 3px; color: #435a90; font-size: 19px; }
+.checklist-relationship-summary p { margin: 0; color: #8a95a6; font-size: 8px; line-height: 1.6; }
+.checklist-scatter-svg { min-width: 680px; min-height: 300px; }
+.checklist-scatter-point { fill: #5878d8; fill-opacity: .65; stroke: #fff; stroke-width: 1.2; }
+.checklist-axis-label { fill: #78859b; font: 10px 'Noto Sans KR',sans-serif; }
+.checklist-table-heading { margin: 16px 0 5px; }
+.checklist-table-heading h3 { margin: 0; color: #52617a; font-size: 10px; }
+.checklist-table-heading p { margin: 4px 0 0; color: #9aa4b4; font-size: 8px; }
+.checklist-impact-table { min-width: 700px; }
+.checklist-impact-table .impact-up { color: #487f67; font-weight: 600; }
+.checklist-impact-table .impact-down { color: #6579af; font-weight: 600; }
+.checklist-pairs-table { min-width: 810px; }
+.checklist-report-table { min-width: 1040px; }
+.checklist-glossary-panel { margin-top: 14px; padding: 18px; }
+.checklist-glossary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 13px; }
+.checklist-glossary-card { min-width: 0; padding: 11px 12px; border: 1px solid #edf0f5; border-radius: 8px; background: #fcfcfe; }
+.checklist-glossary-card > div { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.checklist-glossary-card strong { color: #52617a; font-size: 9px; }
+.checklist-glossary-card small { max-width: 58%; overflow: hidden; color: #9aa4b4; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.checklist-glossary-card p { margin: 6px 0 0; color: #8591a4; font-size: 8px; line-height: 1.6; }
+.checklist-glossary-card p b { color: #637291; }
+@media (max-width: 1100px) { .checklist-upload-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .checklist-analysis-controls { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (max-width: 760px) { .checklist-upload-grid, .checklist-analysis-controls { grid-template-columns: 1fr 1fr; gap: 8px; } .checklist-upload-grid > button { grid-column: 1 / -1; } .checklist-analysis-controls label:nth-child(2) { grid-column: span 2; } .checklist-entry-panel, .checklist-trend-panel, .checklist-history-panel, .checklist-glossary-panel { padding: 13px 12px; } .checklist-glossary-grid { grid-template-columns: 1fr; } .checklist-preview-heading { align-items: flex-start; flex-direction: column; } .checklist-relationship-summary { align-items: flex-start; flex-direction: column; } }

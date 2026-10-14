@@ -312,37 +312,123 @@ app.post('/api/admin/logout', async (c) => {
   return c.json({ success: true })
 })
 
-type ProcessChecklistReading = { item: string; hour: number; slot: number; shift: string; value: number | string; sourceRow: number }
-type ProcessChecklistPayload = { machine?: string; checklistDate?: string; sourceName?: string; rawText?: string; readings?: ProcessChecklistReading[] }
+type ProcessChecklistReading = { item: string; itemKey: string; hour: number; slot: number; shift: string; value: number | string; sourceRow: number }
+type ProcessChecklistDay = { checklistDate?: string; sheetName?: string; rawRows?: unknown[][]; readings?: ProcessChecklistReading[] }
+type ProcessChecklistUpload = { machine?: string; period?: string; days?: ProcessChecklistDay[]; blankCount?: number; skippedCount?: number; conflictCount?: number }
+type StoredChecklistReport = { id: string; machine: string; period: string; original_name: string; size_bytes: number; sheet_count: number; imported_count: number; updated_count: number; duplicate_count: number; conflict_count: number; blank_count: number; skipped_count: number; uploaded_at: string }
+const CHECKLIST_REPORT_TYPES: Record<string, { mime: string; signature: number[] }> = {
+  xlsx: { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', signature: [0x50, 0x4b, 0x03, 0x04] },
+  xls: { mime: 'application/vnd.ms-excel', signature: [0xd0, 0xcf, 0x11, 0xe0] },
+}
+const checklistReadingKey = (reading: ProcessChecklistReading) => JSON.stringify([reading.itemKey, reading.hour, reading.slot])
+const sameChecklistValue = (left: ProcessChecklistReading, right: ProcessChecklistReading) => left.value === right.value
 
 app.get('/api/process-checklists', async (c) => {
-  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
-  const result = await c.env.DB.prepare('SELECT machine, checklist_date, source_name, readings_json, item_count, imported_at FROM process_checklists ORDER BY checklist_date DESC, machine').all<{ machine: string; checklist_date: string; source_name: string; readings_json: string; item_count: number; imported_at: string }>()
-  const records = result.results.map((row) => ({ machine: row.machine, checklistDate: row.checklist_date, sourceName: row.source_name, readings: JSON.parse(row.readings_json) as ProcessChecklistReading[], itemCount: row.item_count, importedAt: row.imported_at }))
+  const [dailyResult, reportResult] = await Promise.all([
+    c.env.DB.prepare('SELECT machine, period, checklist_date, source_sheet, source_name, readings_json, item_count, imported_at FROM process_checklists ORDER BY checklist_date DESC, machine').all<{ machine: string; period: string | null; checklist_date: string; source_sheet: string | null; source_name: string; readings_json: string; item_count: number; imported_at: string }>(),
+    c.env.DB.prepare('SELECT id, machine, period, original_name, size_bytes, sheet_count, imported_count, updated_count, duplicate_count, conflict_count, blank_count, skipped_count, uploaded_at FROM process_checklist_reports ORDER BY uploaded_at DESC LIMIT 100').all<StoredChecklistReport>(),
+  ])
+  const current = dailyResult.results.map((row) => ({ machine: row.machine, period: row.period, checklistDate: row.checklist_date, sheetName: row.source_sheet, sourceName: row.source_name, readings: JSON.parse(row.readings_json) as ProcessChecklistReading[], itemCount: row.item_count, importedAt: row.imported_at }))
   c.header('Cache-Control', 'no-store')
-  return c.json({ current: records, history: records })
+  return c.json({ current, reports: reportResult.results })
 })
 
 app.post('/api/process-checklists', async (c) => {
   if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
-  const body = await c.req.json<ProcessChecklistPayload>().catch(() => ({} as ProcessChecklistPayload))
-  const machine = String(body.machine || '')
-  const checklistDate = String(body.checklistDate || '')
-  const rawText = String(body.rawText || '')
-  const readings = Array.isArray(body.readings) ? body.readings : []
-  if (!['초지3', '초지4', '초지5'].includes(machine)) return c.json({ error: '초지 3·4·5호기 중 하나를 선택해 주세요.' }, 400)
-  if (!isValidReportDate(checklistDate)) return c.json({ error: '체크리스트 날짜가 올바르지 않습니다.' }, 400)
-  if (!rawText || rawText.length > 60000 || readings.length > 600) return c.json({ error: '붙여넣기 데이터 크기를 확인해 주세요.' }, 413)
-  const safeReadings = readings.filter((reading) => reading && typeof reading.item === 'string' && reading.item.length <= 240 && Number.isInteger(reading.hour) && reading.hour >= 0 && reading.hour <= 23 && Number.isInteger(reading.slot) && reading.slot >= 0 && reading.slot < 12 && (typeof reading.value === 'number' && Number.isFinite(reading.value) || typeof reading.value === 'string' && reading.value.length <= 100))
-  if (!safeReadings.length) return c.json({ error: '저장할 시간별 측정값을 찾지 못했습니다.' }, 400)
-  const expectedSource = machine === '초지3' ? '10 월' : machine === '초지4' ? '10월 초지 공정일지' : '10월 공정체크리스트'
-  const sourceName = expectedSource
-  const importedAt = new Date().toISOString()
+  const contentLength = Number(c.req.header('content-length') || 0)
+  if (contentLength > MAX_REPORT_BYTES + 12 * 1024 * 1024) return c.json({ error: '엑셀 파일과 분석 내용이 허용 크기를 넘었습니다.' }, 413)
+  const body = await c.req.parseBody().catch(() => null)
+  const file = body?.file
+  const machine = String(body?.machine || '')
+  const period = String(body?.period || '')
+  if (!(file instanceof File) || !file.size) return c.json({ error: '가져올 공정 체크리스트 Excel 파일을 선택해 주세요.' }, 400)
+  if (file.size > MAX_REPORT_BYTES) return c.json({ error: '파일은 25MB 이하만 첨부할 수 있습니다.' }, 413)
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  const format = CHECKLIST_REPORT_TYPES[extension]
+  if (!format) return c.json({ error: '공정 체크리스트는 .xls 또는 .xlsx 파일이어야 합니다.' }, 415)
+  const data = await file.arrayBuffer()
+  if (!format.signature.every((value, index) => new Uint8Array(data)[index] === value)) return c.json({ error: '파일 내용과 Excel 확장자가 일치하지 않습니다.' }, 415)
+  if (!['초지3', '초지4', '초지5'].includes(machine) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return c.json({ error: '호기 또는 적용 월을 확인해 주세요.' }, 400)
+  let upload: ProcessChecklistUpload
+  try {
+    upload = JSON.parse(String(body?.checklistData || '')) as ProcessChecklistUpload
+  } catch {
+    return c.json({ error: '브라우저에서 분석한 날짜별 체크리스트 데이터가 올바르지 않습니다.' }, 400)
+  }
+  const days = Array.isArray(upload.days) ? upload.days : []
+  if (!days.length || days.length > 31 || days.reduce((sum, day) => sum + (Array.isArray(day.readings) ? day.readings.length : 0), 0) > 20000) return c.json({ error: '저장할 날짜별 측정 데이터를 확인해 주세요.' }, 400)
+  const dayDates = new Set<string>()
+  const normalizedDays: Array<{ date: string; sheetName: string; readings: ProcessChecklistReading[]; rawRows: unknown[][] }> = []
+  for (const day of days) {
+    const date = String(day.checklistDate || '')
+    if (!isValidReportDate(date) || date.slice(0, 7) !== period || dayDates.has(date)) return c.json({ error: '각 시트의 날짜가 선택한 월과 일치하는지 확인해 주세요.' }, 400)
+    dayDates.add(date)
+    const readings = Array.isArray(day.readings) ? day.readings : []
+    const valid = readings.filter((reading) => reading && typeof reading.item === 'string' && reading.item.length <= 240 && typeof reading.itemKey === 'string' && reading.itemKey.length <= 200 && Number.isInteger(reading.hour) && reading.hour >= 0 && reading.hour <= 23 && Number.isInteger(reading.slot) && reading.slot >= 0 && reading.slot < 12 && (typeof reading.value === 'number' && Number.isFinite(reading.value) || typeof reading.value === 'string' && reading.value.length <= 100))
+    if (!valid.length) continue
+    normalizedDays.push({ date, sheetName: String(day.sheetName || '').slice(0, 31), readings: valid, rawRows: Array.isArray(day.rawRows) ? day.rawRows.slice(0, 60) : [] })
+  }
+  if (!normalizedDays.length) return c.json({ error: '선택한 파일에서 저장할 날짜별 측정값을 찾지 못했습니다.' }, 400)
+
   const id = crypto.randomUUID()
-  const exists = await c.env.DB.prepare('SELECT id FROM process_checklists WHERE machine = ? AND checklist_date = ?').bind(machine, checklistDate).first<{ id: string }>()
-  await c.env.DB.prepare('INSERT INTO process_checklists (id, machine, checklist_date, source_name, raw_text, readings_json, item_count, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine, checklist_date) DO UPDATE SET id = excluded.id, source_name = excluded.source_name, raw_text = excluded.raw_text, readings_json = excluded.readings_json, item_count = excluded.item_count, imported_at = excluded.imported_at')
-    .bind(id, machine, checklistDate, sourceName, rawText, JSON.stringify(safeReadings), safeReadings.length, importedAt).run()
-  return c.json({ success: true, updated: Boolean(exists), machine, checklistDate, itemCount: safeReadings.length })
+  const objectKey = `process-checklist-reports/${id}`
+  const uploadedAt = new Date().toISOString()
+  const sourceName = file.name
+  const statements: D1Statement[] = []
+  let importedCount = 0
+  let updatedCount = 0
+  let duplicateCount = 0
+  let conflictCount = Math.max(0, Math.min(20000, Number(upload.conflictCount) || 0))
+  let blankCount = Math.max(0, Math.min(31, Number(upload.blankCount) || 0))
+  const skippedCount = Math.max(0, Math.min(1000, Number(upload.skippedCount) || 0))
+  try {
+    await c.env.REPORTS.put(objectKey, data, { httpMetadata: { contentType: format.mime }, customMetadata: { originalName: sourceName, machine, period } })
+    await c.env.DB.prepare('INSERT INTO process_checklist_reports (id, machine, period, original_name, object_key, content_type, size_bytes, sheet_count, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, machine, period, sourceName, objectKey, format.mime, file.size, normalizedDays.length, uploadedAt).run()
+
+    for (const day of normalizedDays) {
+      const existing = await c.env.DB.prepare('SELECT readings_json FROM process_checklists WHERE machine = ? AND checklist_date = ?').bind(machine, day.date).first<{ readings_json: string }>()
+      const oldReadings = existing ? JSON.parse(existing.readings_json) as ProcessChecklistReading[] : []
+      const merged = new Map(oldReadings.map((reading) => [checklistReadingKey(reading), reading]))
+      let dayChanged = false
+      const incoming = new Map<string, ProcessChecklistReading>()
+      const conflictedKeys = new Set<string>()
+      for (const reading of day.readings) {
+        const key = checklistReadingKey(reading)
+        const previousIncoming = incoming.get(key)
+        if (previousIncoming && !sameChecklistValue(previousIncoming, reading)) { conflictedKeys.add(key); continue }
+        if (previousIncoming) { duplicateCount += 1; continue }
+        incoming.set(key, reading)
+      }
+      conflictedKeys.forEach((key) => { incoming.delete(key); conflictCount += 1 })
+      incoming.forEach((reading, key) => {
+        const previous = merged.get(key)
+        if (!previous) { merged.set(key, reading); importedCount += 1; dayChanged = true }
+        else if (sameChecklistValue(previous, reading)) duplicateCount += 1
+        else { merged.set(key, reading); updatedCount += 1; dayChanged = true }
+      })
+      if (!dayChanged && existing) continue
+      const sql = 'INSERT INTO process_checklists (id, machine, period, checklist_date, source_sheet, source_name, raw_text, raw_sheet_json, readings_json, item_count, imported_at, report_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(machine, checklist_date) DO UPDATE SET id = excluded.id, period = excluded.period, source_sheet = excluded.source_sheet, source_name = excluded.source_name, raw_text = excluded.raw_text, raw_sheet_json = excluded.raw_sheet_json, readings_json = excluded.readings_json, item_count = excluded.item_count, imported_at = excluded.imported_at, report_id = excluded.report_id'
+      statements.push(c.env.DB.prepare(sql).bind(`${machine}-${day.date}`, machine, period, day.date, day.sheetName, sourceName, JSON.stringify({ sourceName, period, sheetName: day.sheetName }), JSON.stringify(day.rawRows), JSON.stringify([...merged.values()]), merged.size, uploadedAt, id))
+    }
+    if (statements.length) await c.env.DB.batch(statements)
+    await c.env.DB.prepare('UPDATE process_checklist_reports SET imported_count = ?, updated_count = ?, duplicate_count = ?, conflict_count = ?, blank_count = ?, skipped_count = ? WHERE id = ?')
+      .bind(importedCount, updatedCount, duplicateCount, conflictCount, blankCount, skippedCount, id).run()
+  } catch {
+    await c.env.REPORTS.delete(objectKey).catch(() => {})
+    await c.env.DB.prepare('DELETE FROM process_checklist_reports WHERE id = ?').bind(id).run().catch(() => {})
+    return c.json({ error: '공정 체크리스트 저장에 실패했습니다. 파일과 날짜별 측정값을 확인한 뒤 다시 시도해 주세요.' }, 500)
+  }
+  return c.json({ success: true, id, machine, period, sheetCount: normalizedDays.length, importedCount, updatedCount, duplicateCount, conflictCount, blankCount, skippedCount })
+})
+
+app.get('/api/process-checklists/reports/:id/download', async (c) => {
+  if (!await hasAdminAccess(c)) return c.json({ error: '관리자 확인이 필요합니다.' }, 401)
+  const report = await c.env.DB.prepare('SELECT original_name, object_key, content_type FROM process_checklist_reports WHERE id = ?').bind(c.req.param('id')).first<{ original_name: string; object_key: string; content_type: string }>()
+  if (!report) return c.notFound()
+  const object = await c.env.REPORTS.get(report.object_key)
+  if (!object) return c.notFound()
+  return new Response(object.body, { headers: { 'Content-Type': report.content_type, 'Content-Disposition': `attachment; filename="${report.original_name.replace(/["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(report.original_name)}`, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } })
 })
 
 app.get('/api/inspection-records', async (c) => {
@@ -968,42 +1054,55 @@ app.get('/reports', async (c) => {
 })
 
 app.get('/process-checklists', async (c) => {
-  if (!await hasAdminAccess(c)) return c.redirect('/?admin=1&next=%2Fprocess-checklists')
   return c.render(
     <div class="app-shell">
       {navigation(undefined, 'checklists')}
       <main class="main-content data-admin-content checklist-content">
-        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>공정 체크리스트</strong></div><div class="source-chip"><span class="source-dot"></span>수기 붙여넣기 · 초지 3·4·5호기</div></header>
-        <section class="page-heading"><div><p class="eyebrow">MACHINE PROCESS CHECKLISTS</p><h1>공정 체크리스트 입력·추이</h1><p class="page-description">엑셀의 날짜별 표를 복사해 붙여 넣으면 시간대별 공정 측정값을 정리해 저장합니다.</p></div></section>
-        <div class="checklist-info-strip"><strong>FELT 추이 데이터는 사용하지 않습니다.</strong><span>이 화면은 예전에 제공된 FELT 자료에서 파생한 데이터를 불러오지 않습니다. 날짜별 체크리스트 원본은 그대로 보존하고, 숫자 측정값만 추이 그래프에 반영합니다.</span></div>
+        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>공정 체크리스트 분석</strong></div><div class="source-chip"><span class="source-dot"></span>초지 3·4·5호기 · 원본 Excel 보관</div></header>
+        <section class="page-heading"><div><p class="eyebrow">PROCESS × QUALITY</p><h1>공정조건과 품질 결과 비교</h1><p class="page-description">체크리스트 Excel을 날짜별로 누적하고, 같은 시간대의 평량·MD·파열강도 등 품질값과 표 형식으로 비교합니다.</p></div></section>
+        <div class="checklist-info-strip"><strong>FELT 과거 정리 데이터는 제외했습니다.</strong><span>이제 사용자가 제공한 공정 체크리스트 Excel만 사용합니다. 공정값과 품질 결과의 동반 변화는 탐색 지표이며, 인과관계를 확정하지 않습니다.</span></div>
         <section class="panel checklist-entry-panel">
-          <div class="inspection-panel-heading"><div><h2>체크리스트 붙여넣기</h2><p>엑셀에서 해당 날짜 시트의 표 범위를 선택해 복사한 뒤 아래에 붙여 넣으세요. 날짜·시간·항목을 자동으로 읽고 저장 전에 미리 확인합니다.</p></div><span class="data-badge">관리자 전용</span></div>
-          <div class="checklist-template-grid">
-            <label><span>초지기</span><select id="checklist-machine"><option value="초지5">초지 5호기 · 10월 공정체크리스트</option><option value="초지3">초지 3호기 · 10 월</option><option value="초지4">초지 4호기 · 10월 초지 공정일지</option></select></label>
-            <label><span>체크리스트 날짜</span><input id="checklist-date" type="date" /></label>
+          <div class="inspection-panel-heading"><div><h2>월별 공정 체크리스트 Excel 추가</h2><p>해당 호기의 월간 파일을 그대로 선택하세요. 1~31 날짜 시트를 자동 검사하고 기존 날짜·항목·시간은 중복 제거 또는 최신값 갱신으로 반영합니다.</p></div><span class="data-badge">저장은 관리자 로그인</span></div>
+          <div class="checklist-upload-grid">
+            <label><span>초지기</span><select id="checklist-machine"><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5" selected>초지5</option></select></label>
+            <label><span>대상 월</span><input id="checklist-period" type="month" required /></label>
+            <label class="checklist-file-field"><span>월간 체크리스트</span><input id="checklist-file" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>
+            <button id="checklist-parse" type="button" class="quiet-button">파일 분석·중복 미리보기</button>
           </div>
-          <p class="checklist-template-note"><strong>양식별 기본 복사 범위</strong> · 초지3 A1:U44 · 초지4 A1:U43 · 초지5 A1:U42. 실제로는 표 전체를 선택해 복사하면 됩니다.</p>
-          <label class="checklist-paste-label" for="checklist-paste"><span>엑셀 셀 붙여넣기</span><textarea id="checklist-paste" spellCheck={false} placeholder="엑셀 범위를 복사한 다음 여기에 붙여 넣으세요."></textarea></label>
-          <div class="checklist-form-actions"><button id="checklist-parse" type="button" class="quiet-button">미리보기</button><button id="checklist-save" type="button" class="primary-button" disabled>체크리스트 저장</button></div>
-          <p id="checklist-status" class="checklist-status" role="status" aria-live="polite">호기별 양식과 날짜를 확인하고 미리보기를 실행하세요.</p>
+          <p class="checklist-template-note"><strong>자동 양식 판별</strong> · 초지3 ‘10 월’, 초지4 ‘10월 초지 공정일지’, 초지5 ‘10월 공정체크리스트’. 다음 달 파일명과 시트 날짜를 읽어 월을 판단합니다. 날짜 시트가 비어 있거나 다른 연도인 경우 자동 반영에서 제외합니다.</p>
+          <p id="checklist-status" class="checklist-status" role="status" aria-live="polite">Excel 파일을 선택해 분석하세요. 같은 월 파일을 다시 올려도 바뀐 공정값만 갱신합니다.</p>
           <div id="checklist-preview" class="checklist-preview" hidden></div>
+          <div class="checklist-form-actions"><button id="checklist-save" type="button" class="primary-button" disabled>중복 제외 후 저장</button></div>
         </section>
         <section class="panel checklist-trend-panel">
-          <div class="inspection-panel-heading"><div><h2>시간대별 공정 추이</h2><p>저장된 체크리스트의 숫자 측정값을 날짜·시간 순으로 표시합니다. 문자 항목은 원본/이력에만 남기고 그래프에서 제외합니다.</p></div><span id="checklist-chart-summary" class="data-badge">—</span></div>
-          <div class="checklist-chart-controls">
-            <label><span>호기</span><select id="checklist-chart-machine"><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5" selected>초지5</option></select></label>
-            <label class="checklist-measure-control"><span>측정 항목</span><select id="checklist-chart-metric"></select></label>
+          <div class="inspection-panel-heading"><div><h2>공정값 ↔ 품질 결과 연계 표</h2><p>품질 검사 시각과 가장 가까운 공정 체크 시각(±120분 이내)을 맞춘 값만 사용합니다. 날짜·제품의 차이와 표본 수를 함께 봐 주세요.</p></div><span id="checklist-pair-count" class="data-badge">0개 표본</span></div>
+          <div class="checklist-analysis-controls">
+            <label><span>호기</span><select id="checklist-analysis-machine"><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5" selected>초지5</option></select></label>
+            <label><span>공정 항목</span><select id="checklist-process-measure"></select></label>
+            <label><span>품질 결과</span><select id="checklist-quality-measure"></select></label>
+            <label><span>품목</span><select id="checklist-product"><option value="">전체 품목</option></select></label>
             <label><span>시작일</span><input id="checklist-start-date" type="date" /></label>
             <label><span>종료일</span><input id="checklist-end-date" type="date" /></label>
           </div>
-          <div id="checklist-chart" class="compare-chart-area"><div class="compare-empty-state">저장된 체크리스트 숫자 기록이 없습니다.</div></div>
+          <div class="checklist-relationship-summary"><div><span>표본 상관계수 r</span><strong id="checklist-correlation">—</strong></div><p>상관계수는 두 값이 함께 움직이는 정도를 보는 참고값입니다. 품목·기준량·원료·조업 조건을 통제하지 않으므로 원인·결과를 뜻하지 않습니다.</p></div>
+          <div class="checklist-table-heading"><h3>공정값 수준별 품질 결과</h3><p>공정 측정값을 표본 수가 비슷한 낮음·중간·높음 3구간으로 나눠 품질 평균을 비교합니다.</p></div>
+          <div class="report-table-wrap"><table class="report-table checklist-impact-table"><thead><tr><th>공정값 구간</th><th>공정값 범위</th><th>표본 n</th><th>공정 평균</th><th>품질 평균</th><th>전체 평균 대비</th></tr></thead><tbody id="checklist-groups"><tr><td colspan={6} class="inspection-loading">데이터를 불러오는 중입니다.</td></tr></tbody></table></div>
+          <div class="checklist-table-heading"><h3>매칭된 표본 산점도</h3><p>각 점은 한 번의 품질 측정과 가장 가까운 공정값을 보여 줍니다.</p></div>
+          <div id="checklist-correlation-chart" class="compare-chart-area"><div class="compare-empty-state">선택 조건에 맞는 공정·품질 표본을 연결합니다.</div></div>
+          <div class="checklist-table-heading"><h3>매칭된 표본</h3><p>한 행이 한 품질 검사값입니다. 여러 LOT 검사값이 같은 공정 측정값과 연결될 수 있습니다.</p></div>
+          <div class="report-table-wrap"><table class="report-table checklist-pairs-table"><thead><tr><th>품질 검사 시각</th><th>품목</th><th>공정값</th><th>품질값</th><th>공정기록 시각 차이</th><th>LOT</th></tr></thead><tbody id="checklist-pairs"><tr><td colspan={6} class="inspection-loading">연계 표본을 계산하는 중입니다.</td></tr></tbody></table></div>
         </section>
         <section class="panel checklist-history-panel">
-          <div class="inspection-panel-heading"><div><h2>저장된 날짜별 체크리스트</h2><p>같은 호기·날짜를 다시 저장하면 최신 붙여넣기 내용으로 교체됩니다.</p></div></div>
-          <div class="report-table-wrap"><table class="report-table"><thead><tr><th>날짜</th><th>호기</th><th>원본 파일명</th><th>측정값</th><th>최근 저장</th></tr></thead><tbody id="checklist-history"><tr><td colspan={5} class="inspection-loading">체크리스트를 불러오는 중입니다.</td></tr></tbody></table></div>
+          <div class="inspection-panel-heading"><div><h2>공정 Excel 등록 이력</h2><p>원본 파일을 다시 내려받을 수 있습니다. 재업로드 시 공정 기록을 삭제하지 않고 신규·변경 데이터만 반영합니다.</p></div></div>
+          <div class="report-table-wrap"><table class="report-table checklist-report-table"><thead><tr><th>월</th><th>호기</th><th>파일명</th><th>시트</th><th>신규·갱신·중복</th><th>등록 시각</th><th>원본</th></tr></thead><tbody id="checklist-history"><tr><td colspan={7} class="inspection-loading">등록 이력을 불러오는 중입니다.</td></tr></tbody></table></div>
+        </section>
+        <section class="panel checklist-glossary-panel">
+          <div class="inspection-panel-heading"><div><h2>공정 항목 설명</h2><p>용어는 일반적인 제지 공정 의미를 바탕으로 정리했습니다. 호기별 설비 명칭·단위가 확실하지 않은 항목은 설명에서 확인 필요성을 함께 표시합니다.</p></div></div>
+          <div id="checklist-glossary" class="checklist-glossary-grid"><p class="inspection-loading">공정 용어 설명을 불러오는 중입니다.</p></div>
         </section>
         <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/compare">검사성적서 품질 추이</a></span></footer>
       </main>
+      <script src="/static/xlsx.full.min.js" defer></script>
       <script src="/static/process-checklists.js" defer></script>
     </div>
   )
