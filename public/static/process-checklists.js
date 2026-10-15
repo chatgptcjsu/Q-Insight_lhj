@@ -281,8 +281,10 @@
       ui.file.value = ''
       await loadData()
       window.qInsightInspectionDatasetPromise = null
-      qualityRows = []
-      await loadAnalysis()
+      if (ui.analysisMachine) {
+        qualityRows = []
+        await loadAnalysis()
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Excel 데이터를 저장하지 못했습니다.', 'error')
       ui.save.disabled = false
@@ -303,10 +305,12 @@
     if (!response.ok) throw new Error(result.error || '공정 체크리스트 기록을 읽지 못했습니다.')
     currentDays = result.current || []
     reports = result.reports || []
-    renderReports()
-    renderMeasureOptions()
-    renderGlossary()
-    renderAnalysis()
+    if (ui.reports) renderReports()
+    if (ui.processMeasure) {
+      renderMeasureOptions()
+      renderGlossary()
+      renderAnalysis()
+    }
   }
 
   async function loadAnalysis() {
@@ -485,35 +489,39 @@
   }
 
   function bindEvents() {
-    ui.file.addEventListener('change', () => { resetPreview(); if (ui.file.files?.[0]) setStatus('파일을 선택했습니다. 미리보기로 날짜별 시트와 중복·신규 항목을 분석하세요.') })
-    ui.parse.addEventListener('click', async () => {
-      const file = ui.file.files?.[0]
-      if (!file) { setStatus('먼저 업로드할 Excel 파일을 선택해 주세요.', 'error'); return }
-      ui.parse.disabled = true
-      setStatus('날짜별 시트를 읽고, 기존 공정 기록과 대조하고 있습니다…')
-      try {
-        const result = await inspectWorkbook(file)
-        renderImportPreview(result)
-        setStatus('분석이 끝났습니다. 호기·월·날짜별 처리 요약을 확인한 다음 저장하세요.', 'success')
-      } catch (error) {
-        resetPreview()
-        setStatus(error instanceof Error ? error.message : 'Excel을 분석하지 못했습니다.', 'error')
-      } finally { ui.parse.disabled = false }
-    })
-    ui.save.addEventListener('click', importWorkbook)
-    ui.analysisMachine.addEventListener('change', () => { renderMeasureOptions(); renderProductOptions(); renderGlossary(); renderAnalysis() })
-    ;[ui.processMeasure, ui.qualityMeasure, ui.product, ui.startDate, ui.endDate].forEach((element) => element.addEventListener('change', renderAnalysis))
+    if (ui.file && ui.parse && ui.save) {
+      ui.file.addEventListener('change', () => { resetPreview(); if (ui.file.files?.[0]) setStatus('파일을 선택했습니다. 미리보기로 날짜별 시트와 중복·신규 항목을 분석하세요.') })
+      ui.parse.addEventListener('click', async () => {
+        const file = ui.file.files?.[0]
+        if (!file) { setStatus('먼저 업로드할 Excel 파일을 선택해 주세요.', 'error'); return }
+        ui.parse.disabled = true
+        setStatus('날짜별 시트를 읽고, 기존 공정 기록과 대조하고 있습니다…')
+        try {
+          const result = await inspectWorkbook(file)
+          renderImportPreview(result)
+          setStatus('분석이 끝났습니다. 호기·월·날짜별 처리 요약을 확인한 다음 저장하세요.', 'success')
+        } catch (error) {
+          resetPreview()
+          setStatus(error instanceof Error ? error.message : 'Excel을 분석하지 못했습니다.', 'error')
+        } finally { ui.parse.disabled = false }
+      })
+      ui.save.addEventListener('click', importWorkbook)
+    }
+    if (ui.analysisMachine) {
+      ui.analysisMachine.addEventListener('change', () => { renderMeasureOptions(); renderProductOptions(); renderGlossary(); renderAnalysis() })
+      ;[ui.processMeasure, ui.qualityMeasure, ui.product, ui.startDate, ui.endDate].forEach((element) => element.addEventListener('change', renderAnalysis))
+    }
   }
 
   async function start() {
-    ui.qualityMeasure.innerHTML = QUALITY_MEASURES.map((measure) => `<option value="${escapeHtml(measure.key)}">${escapeHtml(measure.label)} (${escapeHtml(measure.unit)})</option>`).join('')
+    if (ui.qualityMeasure) ui.qualityMeasure.innerHTML = QUALITY_MEASURES.map((measure) => `<option value="${escapeHtml(measure.key)}">${escapeHtml(measure.label)} (${escapeHtml(measure.unit)})</option>`).join('')
     bindEvents()
     try {
       await loadData()
-      await loadAnalysis()
+      if (ui.analysisMachine) await loadAnalysis()
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '공정/품질 데이터를 불러오지 못했습니다.', 'error')
-      if (/관리자/.test(error.message)) ui.reports.innerHTML = '<tr><td colspan="7">관리자 로그인 후 확인할 수 있습니다.</td></tr>'
+      if (ui.status) setStatus(error instanceof Error ? error.message : '공정/품질 데이터를 불러오지 못했습니다.', 'error')
+      if (/관리자/.test(error.message) && ui.reports) ui.reports.innerHTML = '<tr><td colspan="7">관리자 로그인 후 확인할 수 있습니다.</td></tr>'
     }
   }
 

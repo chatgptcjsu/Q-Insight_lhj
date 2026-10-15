@@ -324,9 +324,12 @@ const checklistReadingKey = (reading: ProcessChecklistReading) => JSON.stringify
 const sameChecklistValue = (left: ProcessChecklistReading, right: ProcessChecklistReading) => left.value === right.value
 
 app.get('/api/process-checklists', async (c) => {
+  const isAdmin = await hasAdminAccess(c)
   const [dailyResult, reportResult] = await Promise.all([
     c.env.DB.prepare('SELECT machine, period, checklist_date, source_sheet, source_name, readings_json, item_count, imported_at FROM process_checklists ORDER BY checklist_date DESC, machine').all<{ machine: string; period: string | null; checklist_date: string; source_sheet: string | null; source_name: string; readings_json: string; item_count: number; imported_at: string }>(),
-    c.env.DB.prepare('SELECT id, machine, period, original_name, size_bytes, sheet_count, imported_count, updated_count, duplicate_count, conflict_count, blank_count, skipped_count, uploaded_at FROM process_checklist_reports ORDER BY uploaded_at DESC LIMIT 100').all<StoredChecklistReport>(),
+    isAdmin
+      ? c.env.DB.prepare('SELECT id, machine, period, original_name, size_bytes, sheet_count, imported_count, updated_count, duplicate_count, conflict_count, blank_count, skipped_count, uploaded_at FROM process_checklist_reports ORDER BY uploaded_at DESC LIMIT 100').all<StoredChecklistReport>()
+      : Promise.resolve({ results: [] as StoredChecklistReport[] }),
   ])
   const current = dailyResult.results.map((row) => ({ machine: row.machine, period: row.period, checklistDate: row.checklist_date, sheetName: row.source_sheet, sourceName: row.source_name, readings: JSON.parse(row.readings_json) as ProcessChecklistReading[], itemCount: row.item_count, importedAt: row.imported_at }))
   c.header('Cache-Control', 'no-store')
@@ -617,7 +620,7 @@ const machines = [
   },
 ]
 
-const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | 'reports' | 'checklists') => (
+const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | 'checklists' | 'admin') => (
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="품질관리 홈">
       <span class="brand-mark">Q</span>
@@ -637,15 +640,14 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | '
       <a class={`nav-link ${activePage === 'checklists' ? 'active' : ''}`} href="/process-checklists">
         <span class="nav-icon overview-icon">⌁</span><span>공정 체크리스트</span>
       </a>
-      <a class={`nav-link ${activePage === 'reports' ? 'active' : ''}`} href="/reports">
-        <span class="nav-icon overview-icon">⇧</span><span>검사성적서 첨부</span>
+      <a class={`nav-link ${activePage === 'admin' ? 'active' : ''}`} href="/admin">
+        <span class="nav-icon overview-icon">⚙</span><span>관리자</span>
       </a>
       {machines.map((machine) => (
         <a class={`nav-link ${activeId === machine.id ? 'active' : ''}`} href={`/machine/${machine.id}`}>
           <span class="nav-icon machine-icon">{machine.id}</span><span>{machine.name}</span>
         </a>
       ))}
-      <button type="button" class="admin-entry-button" data-admin-entry aria-label="관리자 메뉴 열기">관리자</button>
     </nav>
     <div class="sidebar-footer">
       <span class="status-dot"></span>
@@ -981,12 +983,12 @@ app.get('/inspection', (c) => {
 
 app.get('/products', async (c) => {
   const session = await getAdminSession(c)
-  if (!session || session.admin.must_change) return c.redirect('/?admin=1')
+  if (!session || session.admin.must_change) return c.redirect('/?admin=1&next=%2Fproducts')
   return c.render(
     <div class="app-shell">
-      {navigation(undefined)}
+      {navigation(undefined, 'admin')}
         <main class="main-content data-admin-content">
-        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>품명 관리</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 품목 사전</div></header>
+        <header class="topbar"><div class="breadcrumb"><a href="/admin">관리자</a><span class="breadcrumb-divider">/</span><strong>품명 관리</strong></div><div class="source-chip"><span class="source-dot"></span>초지345 품목 사전</div></header>
         <section class="page-heading"><div><p class="eyebrow">PRODUCT MASTER</p><h1>표준 품명·별칭 관리</h1><p class="page-description">표기가 다른 같은 제품은 표준 품명으로 연결하고, 신제품은 여기서 등록합니다.</p></div></section>
         <section class="alias-info-strip"><span class="alias-info-icon">i</span><p>원본 품명 표시와 분석용 표준 품명을 각각 수정할 수 있습니다. 변경 표시는 필터·비교에 반영되며, 실제 엑셀 원본 행은 보존됩니다. 품명은 이름이 비슷하다는 이유만으로 자동 병합하지 않습니다.</p></section>
         <details class="panel product-form-panel product-admin-details">
@@ -1020,13 +1022,66 @@ app.get('/products', async (c) => {
   )
 })
 
+app.get('/admin', async (c) => {
+  if (!await hasAdminAccess(c)) return c.redirect('/?admin=1&next=%2Fadmin')
+  return c.render(
+    <div class="app-shell">
+      {navigation(undefined, 'admin')}
+      <main class="main-content data-admin-content">
+        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>관리자</strong></div><div class="source-chip"><span class="source-dot"></span>관리 기능 모음</div></header>
+        <section class="page-heading"><div><p class="eyebrow">ADMINISTRATION</p><h1>관리자 메뉴</h1><p class="page-description">파일 업로드와 데이터 관리 기능을 한곳에서 이용합니다.</p></div></section>
+        <section class="admin-hub-grid" aria-label="관리 기능">
+          <a class="panel admin-hub-card" href="/reports"><span class="admin-hub-icon">⇧</span><div><p class="eyebrow">INSPECTION REPORTS</p><h2>검사성적서 첨부</h2><p>새 성적서를 보관하고, 초지345 신규·변경 검사값을 분석 데이터에 반영합니다.</p><span class="admin-hub-action">성적서 관리 열기 <b>→</b></span></div></a>
+          <a class="panel admin-hub-card" href="/admin/process-checklists"><span class="admin-hub-icon">⌁</span><div><p class="eyebrow">PROCESS CHECKLISTS</p><h2>월별 공정 체크리스트</h2><p>초지 3·4·5호기 Excel을 추가하고, 같은 날짜·항목의 신규·변경값을 반영합니다.</p><span class="admin-hub-action">공정 Excel 관리 열기 <b>→</b></span></div></a>
+          <a class="panel admin-hub-card" href="/products"><span class="admin-hub-icon">▤</span><div><p class="eyebrow">PRODUCT MASTER</p><h2>품명 및 관리자 설정</h2><p>품명 별칭과 표시명을 관리하고 PIN·복구 설정을 확인합니다.</p><span class="admin-hub-action">설정 열기 <b>→</b></span></div></a>
+        </section>
+        <section class="admin-hub-note"><strong>관리자 기능 안내</strong><span>성적서와 체크리스트 원본은 보관 이력에서 다시 내려받을 수 있습니다. 저장된 검사·공정 기록은 기존 데이터를 지우지 않고 신규·변경 단위로 병합합니다.</span></section>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/">전체 현황으로 돌아가기</a></span></footer>
+      </main>
+    </div>
+  )
+})
+
+app.get('/admin/process-checklists', async (c) => {
+  if (!await hasAdminAccess(c)) return c.redirect('/?admin=1&next=%2Fadmin%2Fprocess-checklists')
+  return c.render(
+    <div class="app-shell">
+      {navigation(undefined, 'admin')}
+      <main class="main-content data-admin-content checklist-content">
+        <header class="topbar"><div class="breadcrumb"><a href="/admin">관리자</a><span class="breadcrumb-divider">/</span><strong>공정 체크리스트 Excel</strong></div><div class="source-chip"><span class="source-dot"></span>초지 3·4·5호기</div></header>
+        <section class="page-heading"><div><p class="eyebrow">PROCESS CHECKLIST ADMIN</p><h1>월별 공정 체크리스트 Excel</h1><p class="page-description">파일을 추가하면 날짜 시트를 읽어 신규·변경값만 분석 데이터에 반영합니다.</p></div></section>
+        <section class="panel checklist-entry-panel">
+          <div class="inspection-panel-heading"><div><h2>월간 Excel 추가</h2><p>초지기와 대상 월을 확인한 뒤 해당 호기의 파일을 선택해 주세요. 원본 Excel은 함께 보관됩니다.</p></div><span class="data-badge">관리자 전용</span></div>
+          <div class="checklist-upload-grid">
+            <label><span>초지기</span><select id="checklist-machine"><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5" selected>초지5</option></select></label>
+            <label><span>대상 월</span><input id="checklist-period" type="month" required /></label>
+            <label class="checklist-file-field"><span>월간 체크리스트</span><input id="checklist-file" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>
+            <button id="checklist-parse" type="button" class="quiet-button">파일 분석·중복 미리보기</button>
+          </div>
+          <p class="checklist-template-note"><strong>양식 자동 판별</strong> · 초지3 ‘10 월’, 초지4 ‘10월 초지 공정일지’, 초지5 ‘10월 공정체크리스트’. 월은 파일명·시트 날짜에서 확인합니다.</p>
+          <p id="checklist-status" class="checklist-status" role="status" aria-live="polite">Excel 파일을 선택해 분석하세요.</p>
+          <div id="checklist-preview" class="checklist-preview" hidden></div>
+          <div class="checklist-form-actions"><button id="checklist-save" type="button" class="primary-button" disabled>중복 제외 후 저장</button></div>
+        </section>
+        <section class="panel checklist-history-panel">
+          <div class="inspection-panel-heading"><div><h2>공정 Excel 등록 이력</h2><p>등록한 원본 파일을 다시 내려받을 수 있습니다.</p></div><a class="quiet-button admin-back-link" href="/admin">관리자 메뉴</a></div>
+          <div class="report-table-wrap"><table class="report-table checklist-report-table"><thead><tr><th>월</th><th>호기</th><th>파일명</th><th>시트</th><th>신규·갱신·중복</th><th>등록 시각</th><th>원본</th></tr></thead><tbody id="checklist-history"><tr><td colspan={7} class="inspection-loading">등록 이력을 불러오는 중입니다.</td></tr></tbody></table></div>
+        </section>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/admin">관리자 메뉴</a></span></footer>
+      </main>
+      <script src="/static/xlsx.full.min.js" defer></script>
+      <script src="/static/process-checklists.js" defer></script>
+    </div>
+  )
+})
+
 app.get('/reports', async (c) => {
   if (!await hasAdminAccess(c)) return c.redirect('/?admin=1&next=%2Freports')
   return c.render(
     <div class="app-shell">
-      {navigation(undefined, 'reports')}
+      {navigation(undefined, 'admin')}
       <main class="main-content data-admin-content">
-        <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>검사성적서 첨부</strong></div><div class="source-chip"><span class="source-dot"></span>일일 수령 파일 관리</div></header>
+        <header class="topbar"><div class="breadcrumb"><a href="/admin">관리자</a><span class="breadcrumb-divider">/</span><strong>검사성적서 첨부</strong></div><div class="source-chip"><span class="source-dot"></span>일일 수령 파일 관리</div></header>
         <section class="page-heading"><div><p class="eyebrow">DAILY INSPECTION REPORTS</p><h1>검사성적서 보관함</h1><p class="page-description">매일 아침 받은 신규·변경 검사성적서를 날짜별로 첨부하고 이전 버전도 함께 보관합니다.</p></div></section>
         <section class="report-info-strip"><span class="alias-info-icon">i</span><p>Excel 파일을 첨부하면 `초지345` 시트의 초지 3·4·5호기 검사행을 읽습니다. 새로운 검사행은 추가하고, 기존 식별정보(호기·검사일·시간·LOT)가 같은 행의 측정값이 바뀌었으면 새 엑셀 값으로 갱신합니다. 새 파일에 없는 기존 기록은 삭제하지 않습니다. 파일 안에서 같은 식별정보가 서로 다르게 반복된 경우만 자동 반영을 보류합니다.</p></section>
         <section class="panel report-upload-panel">
@@ -1045,7 +1100,7 @@ app.get('/reports', async (c) => {
           <div class="report-table-wrap"><table class="report-table"><thead><tr><th>수령일</th><th>파일명</th><th>메모</th><th>파일 크기</th><th>분석 반영 결과</th><th>등록 시각</th><th>관리</th></tr></thead><tbody id="report-list"><tr><td colSpan={7} class="inspection-loading">첨부 이력을 불러오는 중입니다.</td></tr></tbody></table></div>
           <p class="table-disclaimer">신규 검사행은 초지345 원본 표, 호기별 건수·월별 검사 추이 및 품질 비교·분포 화면에 추가됩니다. 기존 행은 유지됩니다. 호기 상세의 사전 계산 통계표와 월별 상자그림은 새 파일만으로 다시 계산하지 않으며, 변경된 기존 측정값은 덮어쓰지 않고 재확인 대상으로 표시합니다.</p>
         </section>
-        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/">전체 현황으로 돌아가기</a></span></footer>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/admin">관리자 메뉴</a></span></footer>
       </main>
       <script src="/static/xlsx.full.min.js" defer></script>
       <script src="/static/reports.js" defer></script>
@@ -1059,21 +1114,9 @@ app.get('/process-checklists', async (c) => {
       {navigation(undefined, 'checklists')}
       <main class="main-content data-admin-content checklist-content">
         <header class="topbar"><div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>공정 체크리스트 분석</strong></div><div class="source-chip"><span class="source-dot"></span>초지 3·4·5호기 · 원본 Excel 보관</div></header>
-        <section class="page-heading"><div><p class="eyebrow">PROCESS × QUALITY</p><h1>공정조건과 품질 결과 비교</h1><p class="page-description">체크리스트 Excel을 날짜별로 누적하고, 같은 시간대의 평량·MD·파열강도 등 품질값과 표 형식으로 비교합니다.</p></div></section>
+        <section class="page-heading"><div><p class="eyebrow">PROCESS × QUALITY</p><h1>공정조건과 품질 결과 비교</h1><p class="page-description">관리자 메뉴에서 등록한 체크리스트 Excel을 품질 결과와 시간별로 비교합니다.</p></div></section>
+        <div class="checklist-info-strip"><strong>공정 Excel 등록은 관리자 메뉴에서</strong><span>사이드바의 ‘관리자’로 이동해 월별 공정 체크리스트를 추가할 수 있습니다. 이 화면은 저장된 공정값과 검사성적서 품질 결과의 연계 분석용입니다.</span></div>
         <div class="checklist-info-strip"><strong>FELT 과거 정리 데이터는 제외했습니다.</strong><span>이제 사용자가 제공한 공정 체크리스트 Excel만 사용합니다. 공정값과 품질 결과의 동반 변화는 탐색 지표이며, 인과관계를 확정하지 않습니다.</span></div>
-        <section class="panel checklist-entry-panel">
-          <div class="inspection-panel-heading"><div><h2>월별 공정 체크리스트 Excel 추가</h2><p>해당 호기의 월간 파일을 그대로 선택하세요. 1~31 날짜 시트를 자동 검사하고 기존 날짜·항목·시간은 중복 제거 또는 최신값 갱신으로 반영합니다.</p></div><span class="data-badge">저장은 관리자 로그인</span></div>
-          <div class="checklist-upload-grid">
-            <label><span>초지기</span><select id="checklist-machine"><option value="초지3">초지3</option><option value="초지4">초지4</option><option value="초지5" selected>초지5</option></select></label>
-            <label><span>대상 월</span><input id="checklist-period" type="month" required /></label>
-            <label class="checklist-file-field"><span>월간 체크리스트</span><input id="checklist-file" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>
-            <button id="checklist-parse" type="button" class="quiet-button">파일 분석·중복 미리보기</button>
-          </div>
-          <p class="checklist-template-note"><strong>자동 양식 판별</strong> · 초지3 ‘10 월’, 초지4 ‘10월 초지 공정일지’, 초지5 ‘10월 공정체크리스트’. 다음 달 파일명과 시트 날짜를 읽어 월을 판단합니다. 날짜 시트가 비어 있거나 다른 연도인 경우 자동 반영에서 제외합니다.</p>
-          <p id="checklist-status" class="checklist-status" role="status" aria-live="polite">Excel 파일을 선택해 분석하세요. 같은 월 파일을 다시 올려도 바뀐 공정값만 갱신합니다.</p>
-          <div id="checklist-preview" class="checklist-preview" hidden></div>
-          <div class="checklist-form-actions"><button id="checklist-save" type="button" class="primary-button" disabled>중복 제외 후 저장</button></div>
-        </section>
         <section class="panel checklist-trend-panel">
           <div class="inspection-panel-heading"><div><h2>공정값 ↔ 품질 결과 연계 표</h2><p>품질 검사 시각과 가장 가까운 공정 체크 시각(±120분 이내)을 맞춘 값만 사용합니다. 날짜·제품의 차이와 표본 수를 함께 봐 주세요.</p></div><span id="checklist-pair-count" class="data-badge">0개 표본</span></div>
           <div class="checklist-analysis-controls">
@@ -1092,17 +1135,12 @@ app.get('/process-checklists', async (c) => {
           <div class="checklist-table-heading"><h3>매칭된 표본</h3><p>한 행이 한 품질 검사값입니다. 여러 LOT 검사값이 같은 공정 측정값과 연결될 수 있습니다.</p></div>
           <div class="report-table-wrap"><table class="report-table checklist-pairs-table"><thead><tr><th>품질 검사 시각</th><th>품목</th><th>공정값</th><th>품질값</th><th>공정기록 시각 차이</th><th>LOT</th></tr></thead><tbody id="checklist-pairs"><tr><td colspan={6} class="inspection-loading">연계 표본을 계산하는 중입니다.</td></tr></tbody></table></div>
         </section>
-        <section class="panel checklist-history-panel">
-          <div class="inspection-panel-heading"><div><h2>공정 Excel 등록 이력</h2><p>원본 파일을 다시 내려받을 수 있습니다. 재업로드 시 공정 기록을 삭제하지 않고 신규·변경 데이터만 반영합니다.</p></div></div>
-          <div class="report-table-wrap"><table class="report-table checklist-report-table"><thead><tr><th>월</th><th>호기</th><th>파일명</th><th>시트</th><th>신규·갱신·중복</th><th>등록 시각</th><th>원본</th></tr></thead><tbody id="checklist-history"><tr><td colspan={7} class="inspection-loading">등록 이력을 불러오는 중입니다.</td></tr></tbody></table></div>
-        </section>
         <section class="panel checklist-glossary-panel">
           <div class="inspection-panel-heading"><div><h2>공정 항목 설명</h2><p>용어는 일반적인 제지 공정 의미를 바탕으로 정리했습니다. 호기별 설비 명칭·단위가 확실하지 않은 항목은 설명에서 확인 필요성을 함께 표시합니다.</p></div></div>
           <div id="checklist-glossary" class="checklist-glossary-grid"><p class="inspection-loading">공정 용어 설명을 불러오는 중입니다.</p></div>
         </section>
-        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/compare">검사성적서 품질 추이</a></span></footer>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/admin">관리자 메뉴</a> · <a href="/compare">검사성적서 품질 추이</a></span></footer>
       </main>
-      <script src="/static/xlsx.full.min.js" defer></script>
       <script src="/static/process-checklists.js" defer></script>
     </div>
   )
