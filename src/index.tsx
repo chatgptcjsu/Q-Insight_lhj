@@ -1084,7 +1084,7 @@ app.get('/process-checklists', async (c) => {
             <label><span>시작일</span><input id="checklist-start-date" type="date" /></label>
             <label><span>종료일</span><input id="checklist-end-date" type="date" /></label>
           </div>
-          <div class="checklist-relationship-summary"><div><span>표본 상관계수 r</span><strong id="checklist-correlation">—</strong></div><p>상관계수는 두 값이 함께 움직이는 정도를 보는 참고값입니다. 품목·기준량·원료·조업 조건을 통제하지 않으므로 원인·결과를 뜻하지 않습니다.</p></div>
+          <div class="checklist-relationship-summary"><div><span>표본 상관계수 r</span><strong id="checklist-correlation">—</strong></div><div><p id="checklist-correlation-note">연결된 표본 수와 공정값 변동을 확인합니다.</p><p>상관계수는 두 값이 함께 움직이는 정도를 보는 참고값입니다. 품목·기준량·원료·조업 조건을 통제하지 않으므로 원인·결과를 뜻하지 않습니다.</p></div></div>
           <div class="checklist-table-heading"><h3>공정값 수준별 품질 결과</h3><p>공정 측정값을 표본 수가 비슷한 낮음·중간·높음 3구간으로 나눠 품질 평균을 비교합니다.</p></div>
           <div class="report-table-wrap"><table class="report-table checklist-impact-table"><thead><tr><th>공정값 구간</th><th>공정값 범위</th><th>표본 n</th><th>공정 평균</th><th>품질 평균</th><th>전체 평균 대비</th></tr></thead><tbody id="checklist-groups"><tr><td colspan={6} class="inspection-loading">데이터를 불러오는 중입니다.</td></tr></tbody></table></div>
           <div class="checklist-table-heading"><h3>매칭된 표본 산점도</h3><p>각 점은 한 번의 품질 측정과 가장 가까운 공정값을 보여 줍니다.</p></div>

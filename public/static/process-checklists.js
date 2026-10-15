@@ -47,6 +47,7 @@
     endDate: document.getElementById('checklist-end-date'),
     pairCount: document.getElementById('checklist-pair-count'),
     correlation: document.getElementById('checklist-correlation'),
+    correlationNote: document.getElementById('checklist-correlation-note'),
     chart: document.getElementById('checklist-correlation-chart'),
     groups: document.getElementById('checklist-groups'),
     pairs: document.getElementById('checklist-pairs'),
@@ -339,9 +340,9 @@
         const date = new Date(`${day.checklistDate}T00:00:00Z`)
         if (reading.hour < 7) date.setUTCDate(date.getUTCDate() + 1)
         const sampleDate = date.toISOString().slice(0, 10)
-        const timestamp = Date.parse(`${sampleDate}T00:00:00Z`) + reading.hour * 3600000 + reading.minute * 60000
         const minute = Number(reading.minute || 0)
-        return { ...reading, minute, checklistDate: day.checklistDate, sampleDate, timestamp: timestamp + minute * 60000 }
+        const timestamp = Date.parse(`${sampleDate}T00:00:00Z`) + reading.hour * 3600000 + minute * 60000
+        return { ...reading, minute, checklistDate: day.checklistDate, sampleDate, timestamp }
       }))
   }
 
@@ -384,6 +385,7 @@
     if (pairs.length < 3) return null
     const xs = pairs.map((pair) => pair.processValue)
     const ys = pairs.map((pair) => pair.qualityValue)
+    if (new Set(xs).size < 2 || new Set(ys).size < 2) return null
     const meanX = xs.reduce((sum, value) => sum + value, 0) / xs.length
     const meanY = ys.reduce((sum, value) => sum + value, 0) / ys.length
     let numerator = 0; let sumX = 0; let sumY = 0
@@ -396,6 +398,10 @@
     if (!pairs.length) return []
     const sorted = [...pairs].sort((a, b) => a.processValue - b.processValue)
     const meanAll = pairs.reduce((sum, pair) => sum + pair.qualityValue, 0) / pairs.length
+    if (new Set(sorted.map((pair) => pair.processValue)).size < 2) {
+      const processValue = sorted[0].processValue
+      return [{ label: '공정값 변동 없음', count: sorted.length, min: processValue, max: processValue, processMean: processValue, qualityMean: meanAll, delta: 0 }]
+    }
     if (sorted.length < 3) {
       return [{ label: '소표본 전체', count: sorted.length, min: sorted[0].processValue, max: sorted[sorted.length - 1].processValue, processMean: sorted.reduce((sum, pair) => sum + pair.processValue, 0) / sorted.length, qualityMean: meanAll, delta: 0 }]
     }
@@ -433,8 +439,19 @@
     const processLabel = processOption?.textContent || '공정값'
     const quality = selectedQuality()
     const r = correlation(pairs)
+    const uniqueProcessValues = new Set(pairs.map((pair) => pair.processValue)).size
+    const uniqueQualityValues = new Set(pairs.map((pair) => pair.qualityValue)).size
     ui.pairCount.textContent = `${pairs.length.toLocaleString('ko-KR')}개 표본`
     ui.correlation.textContent = r === null ? '—' : r.toFixed(3)
+    ui.correlationNote.textContent = !pairs.length
+      ? '현재 호기·기간·품목 조건에서 ±120분 이내 매칭된 품질 표본이 없습니다.'
+      : pairs.length < 3
+        ? '상관계수는 최소 3개 표본이 있어야 계산할 수 있습니다.'
+        : uniqueProcessValues < 2
+          ? '이 기간에는 선택한 공정값이 변하지 않아 상관계수를 계산할 수 없습니다. 아래 표에 전체 구간을 표시합니다.'
+          : uniqueQualityValues < 2
+            ? `매칭은 됐지만 ${quality.label} 값이 모두 같아 상관계수를 계산할 수 없습니다.`
+            : '상관계수는 표본의 동반 변화를 나타내는 참고값이며 인과관계를 뜻하지 않습니다.'
     drawScatter(pairs, processLabel, quality)
     const groups = groupPairs(pairs)
     ui.groups.innerHTML = groups.length ? groups.map((group) => `<tr><td><strong>${group.label}</strong></td><td>${prettyNumber(group.min)}–${prettyNumber(group.max)}</td><td>${group.count}</td><td>${prettyNumber(group.processMean)}</td><td>${prettyNumber(group.qualityMean)} ${escapeHtml(quality.unit)}</td><td class="${group.delta > 0 ? 'impact-up' : group.delta < 0 ? 'impact-down' : ''}">${group.delta > 0 ? '+' : ''}${prettyNumber(group.delta)} ${escapeHtml(quality.unit)}</td></tr>`).join('') : '<tr><td colspan="6" class="inspection-loading">같은 시각 ±120분 내에 매칭된 품질 검사값이 없습니다.</td></tr>'
