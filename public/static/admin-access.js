@@ -10,7 +10,7 @@
   const closeButton = dialog.querySelector('[data-admin-dialog-close]')
   const isProductPage = location.pathname === '/products'
   let mode = 'login'
-  let redirectToProducts = false
+  let redirectAfterLogin = false
   const postLoginDestination = () => {
     const next = new URLSearchParams(location.search).get('next')
     return ['/admin', '/admin/process-checklists', '/products', '/reports'].includes(next) ? next : '/admin'
@@ -136,8 +136,8 @@
     }
     dialog.close()
     if (isProductPage) location.reload()
-    else if (redirectToProducts) {
-      redirectToProducts = false
+    else if (redirectAfterLogin) {
+      redirectAfterLogin = false
       location.assign(postLoginDestination())
     }
   }
@@ -158,8 +158,8 @@
       if (mode === 'show-recovery') {
         dialog.close()
         if (isProductPage) location.reload()
-        else if (redirectToProducts) {
-          redirectToProducts = false
+        else if (redirectAfterLogin) {
+          redirectAfterLogin = false
           location.assign(postLoginDestination())
         }
         return
@@ -168,7 +168,7 @@
       if (mode === 'login') {
         const result = await post('/api/admin/login', { pin: inputValue('admin-pin') })
         if (result.mustChange) {
-          redirectToProducts = !isProductPage
+          redirectAfterLogin = !isProductPage
           setMode('initial-change')
         } else finishLogin(result)
         return
@@ -210,11 +210,11 @@
   document.addEventListener('click', async (event) => {
     if (event.target.closest('[data-admin-entry]')) {
       event.preventDefault()
-      redirectToProducts = !isProductPage
+      redirectAfterLogin = !isProductPage
       try {
         const response = await fetch('/api/admin/status', { credentials: 'same-origin' })
         const current = await response.json()
-        if (current.authenticated && !current.mustChange) location.assign('/products')
+        if (current.authenticated && !current.mustChange) location.assign('/admin')
         else setMode('login')
       } catch {
         setMode('login', '관리자 인증 서버에 연결하지 못했습니다.')
@@ -231,7 +231,7 @@
     } else if (event.target.closest('[data-admin-dialog-close]')) {
       if (dialog.open) dialog.close()
       if (isProductPage) location.assign('/')
-      redirectToProducts = false
+      redirectAfterLogin = false
     }
   })
 
@@ -239,13 +239,13 @@
   closeButton.addEventListener('click', () => {
     if (dialog.open) dialog.close()
     if (isProductPage) location.assign('/')
-    redirectToProducts = false
+    redirectAfterLogin = false
   })
   dialog.addEventListener('click', (event) => {
     if (event.target === dialog && mode !== 'show-recovery') {
       dialog.close()
       if (isProductPage) location.assign('/')
-      redirectToProducts = false
+      redirectAfterLogin = false
     }
   })
   dialog.addEventListener('cancel', (event) => {
@@ -253,14 +253,14 @@
     if (mode === 'show-recovery') return
     dialog.close()
     if (isProductPage) location.assign('/')
-    redirectToProducts = false
+    redirectAfterLogin = false
   })
 
   if (isProductPage) {
     const protectedPage = document.querySelector('[data-admin-protected]')
     if (protectedPage) protectedPage.classList.add('admin-authorized')
   } else if (new URLSearchParams(location.search).has('admin')) {
-    redirectToProducts = true
+    redirectAfterLogin = true
     setMode('login')
   }
 })()

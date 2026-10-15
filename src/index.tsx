@@ -620,7 +620,7 @@ const machines = [
   },
 ]
 
-const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | 'checklists' | 'admin') => (
+const navigation = (activeId?: string, activePage?: 'compare' | 'checklists' | 'admin') => (
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="품질관리 홈">
       <span class="brand-mark">Q</span>
@@ -629,19 +629,13 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | '
     <div class="nav-caption">품질 현황</div>
     <nav class="machine-nav" aria-label="초지기별 메뉴">
       <a class={`nav-link ${activeId || activePage ? '' : 'active'}`} href="/">
-        <span class="nav-icon overview-icon">▦</span><span>전체 현황</span>
-      </a>
-      <a class={`nav-link ${activePage === 'inspection' ? 'active' : ''}`} href="/inspection">
-        <span class="nav-icon overview-icon">▤</span><span>초지345 원본</span>
+        <span class="nav-icon overview-icon">▦</span><span>현황 · 원본</span>
       </a>
       <a class={`nav-link ${activePage === 'compare' ? 'active' : ''}`} href="/compare">
         <span class="nav-icon overview-icon">↗</span><span>품질 추이</span>
       </a>
       <a class={`nav-link ${activePage === 'checklists' ? 'active' : ''}`} href="/process-checklists">
         <span class="nav-icon overview-icon">⌁</span><span>공정 체크리스트</span>
-      </a>
-      <a class={`nav-link ${activePage === 'admin' ? 'active' : ''}`} href="/admin">
-        <span class="nav-icon overview-icon">⚙</span><span>관리자</span>
       </a>
       {machines.map((machine) => (
         <a class={`nav-link ${activeId === machine.id ? 'active' : ''}`} href={`/machine/${machine.id}`}>
@@ -653,6 +647,9 @@ const navigation = (activeId?: string, activePage?: 'inspection' | 'compare' | '
       <span class="status-dot"></span>
       <span><strong>검사 데이터 기준</strong><small>업로드 데이터 포함</small></span>
     </div>
+    <a class={`admin-sidebar-link ${activePage === 'admin' ? 'active' : ''}`} href="/admin" aria-label="관리자 메뉴">
+      <span aria-hidden="true">⚙</span><span>관리자</span>
+    </a>
   </aside>
 )
 
@@ -666,9 +663,9 @@ app.get('/', async (c) => {
   return c.render(
     <div class="app-shell">
       {navigation()}
-      <main class="main-content">
+      <main class="main-content inspection-content">
         <header class="topbar">
-          <div class="breadcrumb"><span>품질관리</span><span class="breadcrumb-divider">/</span><strong>전체 현황</strong></div>
+          <div class="breadcrumb"><span>품질관리</span><span class="breadcrumb-divider">/</span><strong>전체 현황 · 원본 데이터</strong></div>
           <div class="source-chip"><span class="source-dot"></span>검사성적서 데이터 · 2026년</div>
         </header>
         <section class="page-heading">
@@ -716,12 +713,52 @@ app.get('/', async (c) => {
             ))}
           </div>
         </section>
+        <section class="inspection-home-panel" id="inspection-data-section" aria-label="초지345 원본 데이터">
+          <div class="inspection-panel-heading inspection-home-heading">
+            <div><p class="eyebrow">SOURCE DATA BROWSER</p><h2>초지345 검사 원본 데이터</h2><p>전체 현황과 원본 행 조회를 한 화면에서 확인합니다. 호기·월·품명으로 좁히거나 의심값 후보를 검토할 수 있습니다.</p></div>
+            <a class="quiet-button inspection-jump-link" href="#inspection-data-table">원본 표로 이동 ↓</a>
+          </div>
+          <section class="inspection-summary" aria-label="초지345 원본 데이터 요약">
+            <article class="summary-card"><div class="summary-label">검사 데이터 행</div><div id="inspection-record-count" class="summary-value">불러오는 중</div><div class="summary-note"><span class="summary-icon blue">▤</span>초지345 시트 원본</div></article>
+            <article class="summary-card"><div class="summary-label">현재 필터 결과</div><div id="inspection-filtered-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon blue">⌕</span>필터 조건 적용 후 표시</div></article>
+            <article class="summary-card alert-summary-card"><div class="summary-label">확인 필요 후보</div><div id="inspection-alert-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon coral">!</span>통계적 이상값 후보</div></article>
+            <article class="summary-card"><div class="summary-label">표시 검사 항목 열</div><div id="inspection-column-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon green">✓</span>판정 열 제외</div></article>
+          </section>
+          <section class="panel inspection-filter-panel" aria-label="원본 검사 데이터 필터">
+            <div class="inspection-panel-heading"><div><h3>데이터 필터</h3><p>호기, 월, 품명 또는 검색어로 원본 행을 찾습니다.</p></div><button type="button" id="reset-inspection-filters" class="quiet-button">조건 초기화</button></div>
+            <form id="inspection-filter-form" class="inspection-filters">
+              <label><span>생산 호기</span><select id="filter-machine"><option value="">전체 호기</option></select></label>
+              <label><span>월</span><select id="filter-month"><option value="">전체 월</option></select></label>
+              <label class="product-filter"><span>품명</span><select id="filter-product"><option value="">전체 품명</option></select></label>
+              <label><span>행 종류</span><select id="filter-row-type"><option value="inspection">검사 데이터</option><option value="all">전체 사용 행</option><option value="auxiliary">보조 계산 행</option></select></label>
+              <label class="search-filter"><span>빠른 검색</span><input id="filter-query" type="search" placeholder="LOT, 검사자, 비고 등" /></label>
+              <label class="check-filter"><input id="filter-suspicious-only" type="checkbox" /><span>의심값만 보기</span></label>
+              <label><span>페이지당 행</span><select id="filter-page-size"><option value="50">50행</option><option value="100">100행</option><option value="200">200행</option></select></label>
+            </form>
+            <div class="filter-status"><span id="inspection-filter-description">엑셀 원본 데이터를 읽는 중입니다.</span><span id="inspection-page-status"></span></div>
+          </section>
+          <section class="panel inspection-alert-panel" aria-label="의심 입력값 검토">
+            <div class="inspection-panel-heading alert-panel-heading">
+              <div><div class="alert-heading-line"><span class="alert-mark">!</span><h3>확인 필요 후보</h3><span id="unreviewed-alert-badge" class="review-count-badge">계산 중</span></div><p>같은 호기·품명·검사 항목의 분포와 크게 다른 숫자입니다. 자동 수정하지 않으며, 담당자가 확인해야 합니다.</p></div>
+              <button id="restore-dismissed-alerts" type="button" class="quiet-button">확인 처리 복구</button>
+            </div>
+            <div id="inspection-alert-list" class="inspection-alert-list"><div class="inspection-loading">입력값을 확인하고 있습니다.</div></div>
+          </section>
+          <section class="panel source-table-panel" id="inspection-data-table" aria-label="초지345 전체 원본 표">
+            <div class="inspection-panel-heading source-table-heading"><div><h3>원본 데이터 표</h3><p>합격·불합격 판정 열은 숨기고, 측정값과 원본 행은 유지합니다.</p></div><span id="inspection-row-range" class="data-badge">—</span></div>
+            <div id="inspection-load-error" class="inspection-load-error" hidden></div>
+            <div class="source-table-scroll"><table class="source-data-table"><thead id="inspection-table-head"></thead><tbody id="inspection-table-body"><tr><td colSpan={44} class="inspection-loading">초지345 데이터를 불러오는 중입니다.</td></tr></tbody></table></div>
+            <nav class="inspection-pagination" aria-label="원본 표 페이지 이동"><button id="inspection-prev-page" type="button" class="quiet-button">이전</button><span id="inspection-page-label">—</span><button id="inspection-next-page" type="button" class="quiet-button">다음</button></nav>
+            <p class="table-disclaimer">알림은 통계적 의심 후보입니다. 올바른 특이값도 있을 수 있으므로 원본 숫자는 바꾸지 않으며, 확인 처리는 현재 브라우저에만 저장됩니다.</p>
+          </section>
+        </section>
         <section class="insight-strip">
           <div class="insight-mark">i</div>
           <div><strong>검사성적서 업로드 데이터가 자동 반영됩니다.</strong><p>초지345 원본·호기별 검사 건수·월별 품질 추이는 최신 업로드 기준입니다. 사전 계산 통계분석 표와 호기 상세 상자그림은 별도 갱신 대상입니다.</p></div>
         </section>
-        <footer class="page-footer">품질 데이터 관리 시스템 <span>초기 화면 시안 · 엑셀 데이터 요약</span></footer>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span>초지345 검사 원본과 통합 현황</span></footer>
       </main>
+      <script src="/static/inspection.js" defer></script>
     </div>
   )
 })
@@ -924,62 +961,7 @@ app.get('/machine/:id', async (c) => {
   )
 })
 
-app.get('/inspection', (c) => {
-  return c.render(
-    <div class="app-shell">
-      {navigation(undefined, 'inspection')}
-      <main class="main-content inspection-content">
-        <header class="topbar">
-          <div class="breadcrumb"><a href="/">전체 현황</a><span class="breadcrumb-divider">/</span><strong>초지345 원본 데이터</strong></div>
-          <div class="source-chip"><span class="source-dot"></span>검사성적서 · 초지345</div>
-        </header>
-        <section class="page-heading inspection-heading">
-          <div>
-            <p class="eyebrow">SOURCE DATA BROWSER</p>
-            <h1>초지345 원본 데이터</h1>
-            <p class="page-description">엑셀 원본 행을 필터링해 조회하고, 통계적으로 튀는 입력값을 검토합니다.</p>
-          </div>
-          <div class="date-range"><span class="calendar-icon">▦</span>원본 시트 전체 범위</div>
-        </section>
-        <section class="inspection-summary" aria-label="초지345 원본 데이터 요약">
-          <article class="summary-card"><div class="summary-label">검사 데이터 행</div><div id="inspection-record-count" class="summary-value">불러오는 중</div><div class="summary-note"><span class="summary-icon blue">▤</span>초지345 시트 원본</div></article>
-          <article class="summary-card"><div class="summary-label">현재 필터 결과</div><div id="inspection-filtered-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon blue">⌕</span>필터 조건 적용 후 표시</div></article>
-          <article class="summary-card alert-summary-card"><div class="summary-label">확인 필요 후보</div><div id="inspection-alert-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon coral">!</span>통계적 이상값 후보</div></article>
-          <article class="summary-card"><div class="summary-label">표시 검사 항목 열</div><div id="inspection-column-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon green">✓</span>판정 열 제외</div></article>
-        </section>
-        <section class="panel inspection-filter-panel" aria-label="원본 검사 데이터 필터">
-          <div class="inspection-panel-heading"><div><h2>데이터 필터</h2><p>호기, 월, 품명 또는 검색어로 원본 행을 찾습니다.</p></div><button type="button" id="reset-inspection-filters" class="quiet-button">조건 초기화</button></div>
-          <form id="inspection-filter-form" class="inspection-filters">
-            <label><span>생산 호기</span><select id="filter-machine"><option value="">전체 호기</option></select></label>
-            <label><span>월</span><select id="filter-month"><option value="">전체 월</option></select></label>
-            <label class="product-filter"><span>품명</span><select id="filter-product"><option value="">전체 품명</option></select></label>
-            <label><span>행 종류</span><select id="filter-row-type"><option value="inspection">검사 데이터</option><option value="all">전체 사용 행</option><option value="auxiliary">보조 계산 행</option></select></label>
-            <label class="search-filter"><span>빠른 검색</span><input id="filter-query" type="search" placeholder="LOT, 검사자, 비고 등" /></label>
-            <label class="check-filter"><input id="filter-suspicious-only" type="checkbox" /><span>의심값만 보기</span></label>
-            <label><span>페이지당 행</span><select id="filter-page-size"><option value="50">50행</option><option value="100">100행</option><option value="200">200행</option></select></label>
-          </form>
-          <div class="filter-status"><span id="inspection-filter-description">엑셀 원본 데이터를 읽는 중입니다.</span><span id="inspection-page-status"></span></div>
-        </section>
-        <section class="panel inspection-alert-panel" aria-label="의심 입력값 검토">
-          <div class="inspection-panel-heading alert-panel-heading">
-            <div><div class="alert-heading-line"><span class="alert-mark">!</span><h2>확인 필요 후보</h2><span id="unreviewed-alert-badge" class="review-count-badge">계산 중</span></div><p>같은 호기·품명·검사 항목의 분포와 크게 다른 숫자입니다. 자동 수정하지 않으며, 담당자가 확인해야 합니다.</p></div>
-            <button id="restore-dismissed-alerts" type="button" class="quiet-button">확인 처리 복구</button>
-          </div>
-          <div id="inspection-alert-list" class="inspection-alert-list"><div class="inspection-loading">입력값을 확인하고 있습니다.</div></div>
-        </section>
-        <section class="panel source-table-panel" aria-label="초지345 전체 원본 표">
-          <div class="inspection-panel-heading source-table-heading"><div><h2>원본 데이터 표</h2><p>합격·불합격 판정 열은 화면에서 숨기고, 측정값과 원본 행은 유지합니다.</p></div><span id="inspection-row-range" class="data-badge">—</span></div>
-          <div id="inspection-load-error" class="inspection-load-error" hidden></div>
-          <div class="source-table-scroll"><table class="source-data-table"><thead id="inspection-table-head"></thead><tbody id="inspection-table-body"><tr><td colSpan={44} class="inspection-loading">초지345 데이터를 불러오는 중입니다.</td></tr></tbody></table></div>
-          <nav class="inspection-pagination" aria-label="원본 표 페이지 이동"><button id="inspection-prev-page" type="button" class="quiet-button">이전</button><span id="inspection-page-label">—</span><button id="inspection-next-page" type="button" class="quiet-button">다음</button></nav>
-          <p class="table-disclaimer">알림은 통계적 의심 후보입니다. 올바른 특이값도 있을 수 있으므로 원본 숫자는 바꾸지 않으며, 확인 처리는 현재 브라우저에만 저장되는 시안 동작입니다.</p>
-        </section>
-        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/">전체 현황으로 돌아가기</a></span></footer>
-      </main>
-      <script src="/static/inspection.js" defer></script>
-    </div>
-  )
-})
+app.get('/inspection', (c) => c.redirect('/'))
 
 app.get('/products', async (c) => {
   const session = await getAdminSession(c)
@@ -1192,7 +1174,7 @@ app.get('/compare', (c) => {
           <div class="boxplot-legend compare-legend"><span><i class="legend-box"></i>25–75 백분위</span><span><i class="legend-median"></i>중앙값</span><span><i class="legend-whisker"></i>수염</span><span><i class="legend-outlier"></i>이상치</span></div>
             <p class="table-disclaimer">분포 비교는 선택한 기간의 검사값을 합쳐 품목별 분포를 보여줍니다. 품명 별칭은 표준 품명으로 묶습니다.</p>
         </section>
-        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/inspection">초지345 원본 데이터</a> · <a href="/process-checklists">공정 체크리스트</a></span></footer>
+        <footer class="page-footer">품질 데이터 관리 시스템 <span><a href="/">전체 현황 · 원본 데이터</a> · <a href="/process-checklists">공정 체크리스트</a></span></footer>
       </main>
           <script src="/static/compare.js" defer></script>
           <script src="/static/compare-trends.js" defer></script>

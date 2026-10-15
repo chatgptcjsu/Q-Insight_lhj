@@ -31,8 +31,9 @@ button, input { font: inherit; }
 .active .nav-icon { border-color: #d6dfff; background: #fff; color: #4268e8; }
 .overview-icon { font-size: 16px; }
 .nav-alert { margin-left: auto; display: grid; place-items: center; min-width: 21px; height: 21px; border-radius: 7px; background: #fff0ed; color: #e26a5c; font-size: 10px; font-weight: 700; }
-.admin-entry-button { width: 100%; min-height: 34px; margin-top: 9px; padding: 0 11px; border: 1px solid #edf0f5; border-radius: 7px; background: #fff; color: #8b96a8; cursor: pointer; text-align: left; font-size: 9px; }
-.admin-entry-button:hover { border-color: #d9e0f1; background: #fafbfe; color: #5c6d9d; }
+.admin-sidebar-link { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin: 8px 0 0 10px; padding: 5px 7px; border: 1px solid transparent; border-radius: 6px; color: #a0a8b6; font-size: 9px; line-height: 1; transition: background .16s, color .16s, border-color .16s; }
+.admin-sidebar-link > span:first-child { font-size: 11px; }
+.admin-sidebar-link:hover, .admin-sidebar-link.active { border-color: #edf0f5; background: #fafbfc; color: #69768d; }
 .sidebar-footer { display: flex; align-items: flex-start; gap: 9px; margin-top: auto; padding: 14px 10px 4px; border-top: 1px solid #edf0f5; }
 .status-dot, .source-dot { width: 7px; height: 7px; margin-top: 5px; flex: 0 0 7px; border-radius: 50%; background: #44bd8b; box-shadow: 0 0 0 3px #e9f8f1; }
 .sidebar-footer strong, .sidebar-footer small { display: block; }
@@ -427,7 +428,7 @@ td:nth-child(3) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .compare-target-option input { flex: 0 0 auto; }
 .compare-target-option:has(input:checked) { border-color: #bccaf6; background: #f4f6ff; }
 .compare-chart-area .compare-svg { max-height: 490px; }
-@media (max-width: 760px) { .product-name-chips { max-width: 185px; } .product-actions { min-width: 95px; } .compare-filter-grid { gap: 8px; } .compare-filter-grid label { font-size: 8px; } .compare-chart-area .compare-svg { min-width: 620px; } .admin-entry-button { width: auto; flex: 0 0 auto; margin: 0 0 2px; padding: 0 10px; text-align: center; } .admin-security-details { padding: 0; } .admin-security-actions { padding: 10px 12px 12px; } }
+@media (max-width: 760px) { .product-name-chips { max-width: 185px; } .product-actions { min-width: 95px; } .compare-filter-grid { gap: 8px; } .compare-filter-grid label { font-size: 8px; } .compare-chart-area .compare-svg { min-width: 620px; } .admin-sidebar-link { margin-top: 5px; margin-left: 3px; padding: 4px 6px; font-size: 8px; } .admin-security-details { padding: 0; } .admin-security-actions { padding: 10px 12px 12px; } }
 .admin-dialog { width: min(420px, calc(100% - 28px)); max-width: none; padding: 0; border: 0; border-radius: 14px; background: transparent; color: var(--ink); box-shadow: 0 22px 70px #15233a36; }
 .admin-dialog::backdrop { background: #15233a75; backdrop-filter: blur(3px); }
 .admin-dialog-card { position: relative; padding: 25px; border: 1px solid #e8ecf3; border-radius: 14px; background: #fff; }
@@ -566,5 +567,14 @@ td:nth-child(3) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .admin-hub-note { display: flex; gap: 10px; margin-top: 14px; padding: 12px 14px; border: 1px solid #e5eafb; border-radius: 8px; background: #f4f6fc; color: #8792a5; font-size: 9px; line-height: 1.65; }
 .admin-hub-note strong { flex: 0 0 auto; color: #586cae; }
 .admin-back-link { display: inline-flex; align-items: center; text-decoration: none; }
+.inspection-home-panel { margin-top: 29px; padding-top: 19px; border-top: 1px solid #e9edf4; }
+.inspection-home-heading { align-items: center; margin-bottom: 12px; }
+.inspection-home-heading h2 { margin: 0; color: #26334a; font-size: 16px; }
+.inspection-home-heading p:not(.eyebrow) { margin: 5px 0 0; color: #8994a7; font-size: 10px; line-height: 1.6; }
+.inspection-home-heading .eyebrow { margin-bottom: 5px; }
+.inspection-jump-link { flex: 0 0 auto; }
+.inspection-home-panel > .inspection-summary { margin-bottom: 13px; }
+.inspection-home-panel .inspection-filter-panel, .inspection-home-panel .inspection-alert-panel, .inspection-home-panel .source-table-panel { margin-top: 12px; }
+.inspection-home-panel .inspection-filter-panel, .inspection-home-panel .inspection-alert-panel { padding: 15px 16px; }
 @media (max-width: 900px) { .admin-hub-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 760px) { .admin-hub-grid { grid-template-columns: 1fr; } .admin-hub-card { min-height: 160px; padding: 15px 14px; } .admin-hub-card p:not(.eyebrow) { min-height: auto; } .admin-hub-note { flex-direction: column; gap: 3px; } }
