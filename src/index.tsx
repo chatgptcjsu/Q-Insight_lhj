@@ -678,14 +678,9 @@ app.get('/', async (c) => {
         </section>
         <section class="summary-grid overview-summary-grid" aria-label="전체 품질 요약">
           <article class="summary-card">
-            <div class="summary-label">전체 검사 기록</div>
+            <div class="summary-label">초지 3·4·5호기 검사 기록</div>
             <div class="summary-value">{totalRecords.toLocaleString('ko-KR')}<span>건</span></div>
-            <div class="summary-note"><span class="summary-icon blue">▤</span>초지 3·4·5호기 누적</div>
-          </article>
-          <article class="summary-card">
-            <div class="summary-label">관리 대상 설비</div>
-            <div class="summary-value">3<span>대</span></div>
-            <div class="summary-note"><span class="summary-icon green">✓</span>초지 3·4·5호기</div>
+            <div class="summary-note"><span class="summary-icon blue">▤</span>초지 3·4·5호기만 집계</div>
           </article>
         </section>
         <section class="machine-section">
@@ -719,11 +714,12 @@ app.get('/', async (c) => {
             <a class="quiet-button inspection-jump-link" href="#inspection-data-table">원본 표로 이동 ↓</a>
           </div>
           <section class="inspection-summary" aria-label="초지345 원본 데이터 요약">
-            <article class="summary-card"><div class="summary-label">검사 데이터 행</div><div id="inspection-record-count" class="summary-value">불러오는 중</div><div class="summary-note"><span class="summary-icon blue">▤</span>초지345 시트 원본</div></article>
-            <article class="summary-card"><div class="summary-label">현재 필터 결과</div><div id="inspection-filtered-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon blue">⌕</span>필터 조건 적용 후 표시</div></article>
+            <article class="summary-card"><div class="summary-label">전체 원본 검사 행</div><div id="inspection-record-count" class="summary-value">불러오는 중</div><div class="summary-note"><span class="summary-icon blue">▤</span>모든 생산라인 · 보조 계산 행 제외</div></article>
+            <article class="summary-card"><div class="summary-label">현재 필터 결과 행</div><div id="inspection-filtered-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon blue">⌕</span>조건 일치 전체 행 · 페이지 수와 별도</div></article>
             <article class="summary-card alert-summary-card"><div class="summary-label">확인 필요 후보</div><div id="inspection-alert-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon coral">!</span>통계적 이상값 후보</div></article>
-            <article class="summary-card"><div class="summary-label">표시 검사 항목 열</div><div id="inspection-column-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon green">✓</span>판정 열 제외</div></article>
+            <article class="summary-card"><div class="summary-label">표시 데이터 열</div><div id="inspection-column-count" class="summary-value">—</div><div class="summary-note"><span class="summary-icon green">✓</span>판정 열 제외 · 행 번호 별도</div></article>
           </section>
+          <p class="inspection-count-explanation">대시보드의 검사 기록은 초지 3·4·5호기만 집계합니다. 원본 검사 행에는 APP·모나리자 등 다른 생산라인도 포함되므로 수치가 다를 수 있습니다.</p>
           <section class="panel inspection-filter-panel" aria-label="원본 검사 데이터 필터">
             <div class="inspection-panel-heading"><div><h3>데이터 필터</h3><p>호기, 월, 품명 또는 검색어로 원본 행을 찾습니다.</p></div><button type="button" id="reset-inspection-filters" class="quiet-button">조건 초기화</button></div>
             <form id="inspection-filter-form" class="inspection-filters">

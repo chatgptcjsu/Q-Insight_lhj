@@ -56,8 +56,7 @@ h1, h2, h3, p { margin-top: 0; }
 .date-range { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #e5eaf2; border-radius: 8px; background: #fff; color: #5c6980; font-size: 11px; white-space: nowrap; }
 .calendar-icon { color: #7084c7; }
 .summary-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
-.overview-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-.overview-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.overview-summary-grid { grid-template-columns: minmax(0,1fr); max-width: 370px; }
 .summary-card { min-height: 134px; padding: 17px 19px 15px; border: 1px solid #e9edf4; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px #2a416007; }
 .summary-label { color: #8994a8; font-size: 11px; font-weight: 500; }
 .summary-value { margin-top: 11px; color: #202d45; font-size: 27px; font-weight: 700; letter-spacing: -.04em; line-height: 1; }
@@ -574,6 +573,7 @@ td:nth-child(3) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .inspection-home-heading .eyebrow { margin-bottom: 5px; }
 .inspection-jump-link { flex: 0 0 auto; }
 .inspection-home-panel > .inspection-summary { margin-bottom: 13px; }
+.inspection-count-explanation { margin: -5px 0 13px; color: #7f8ba0; font-size: 9px; line-height: 1.6; }
 .inspection-home-panel .inspection-filter-panel, .inspection-home-panel .inspection-alert-panel, .inspection-home-panel .source-table-panel { margin-top: 12px; }
 .inspection-home-panel .inspection-filter-panel, .inspection-home-panel .inspection-alert-panel { padding: 15px 16px; }
 @media (max-width: 900px) { .admin-hub-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
